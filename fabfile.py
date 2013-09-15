@@ -14,23 +14,30 @@ recorded_envs = set()
 
 
 def vagrant():
-    # change from the default user to 'vagrant'
-    env.user = 'vagrant'
-    # connect to the port-forwarded ssh
-    env.hosts = ['127.0.0.1:2222']
-
     # use vagrant ssh key
-    if env.get("PROVIDER"):
-        result = local('vagrant ssh_config --provider=%s | grep IdentityFile' % env.PROVIDER, capture=True)
-    else:
-        result = local('vagrant ssh_config | grep IdentityFile', capture=True)
-    env.key_filename = result.split()[1]
+    result = local('vagrant ssh-config | grep IdentityFile', capture=True)
+
+    info = dict()
+    for line in result.split('\n'):
+        line = line.strip()
+        if line:
+            key, value = line.split(' ', 1)
+            info[key] = value
+
+    print 'vagrant ssh info:', result, info
+
+    env.key_filename = info['IdentityFile']
+    env.hosts = ['%s:%s' % (info['HostName'], info['Port'])]
+    env.user = info['User']
 
 
 def aws():
     env.PROVIDER = 'aws'
-    vagrant()
+    env.BOX_NAME = 'awsbox'
     env.DOCKER_PROVISION = 'vagrant up --provider=aws'
+    result = local('vagrant box list', capture=True)
+    if 'awsbox' not in result:
+        local('vagrant box add awsbox https://github.com/mitchellh/vagrant-aws/raw/master/dummy.box')
 
 
 def load_settings(path=None):
@@ -65,26 +72,29 @@ def gencode(length):
 
 def awssetup():
     environ['PROVISIONER'] = 'aws'
+    #TODO prompt for
+    #23 and 80 are required
+    environ['AWS_SECURITY_GROUPS'] = 'dockcluster'
+    environ['AWS_AMI'] = 'ami-e1357b88'
+    environ['AWS_MACHINE'] = 'm1.small'
     environ['AWS_ACCESS_KEY_ID'] = prompt('Enter your AWS Access Key ID')
     environ['AWS_SECRET_ACCESS_KEY'] = prompt('Enter your AWS Secret Access Key')
     environ['AWS_KEYPAIR_NAME'] = prompt('Enter your AWS Key pair name')
     environ['AWS_SSH_PRIVKEY'] = prompt('Enter your AWS SSH private key path')
     env.update(environ)
-    recorded_envs.update(['PROVISIONER', 'AWS_ACCESS_KEY_ID',
-        'AWS_SECRET_ACCESS_KEY', 'AWS_KEYPAIR_NAME', 'AWS_SSH_PRIVKEY'])
+    recorded_envs.update(['PROVISIONER', 'AWS_ACCESS_KEY_ID', 'AWS_AMI',
+        'AWS_SECRET_ACCESS_KEY', 'AWS_KEYPAIR_NAME', 'AWS_SSH_PRIVKEY',
+        'AWS_SECURITY_GROUPS', 'AWS_MACHINE'])
     write_settings()
     aws()
     initialize()
 
 
 def initialize():
-    if 'DOCKER_PATH' not in env:
-        if not os.path.exists('docker'):
-            local('git clone %(DOCKER_REPOSITORY)s docker' % env)
-        env.DOCKER_PATH = './docker'
-        recorded_envs.add('DOCKER_PATH')
-    #provision with docker
-    local('cd %(DOCKER_PATH)s &&  %(DOCKER_PROVISION)s' % env)
+    #provision and install docker
+    result = local('%(DOCKER_PROVISION)s' % env, capture=True)
+    print 'Provision result:', result
+    vagrant()  # load connection info
     #copy self
     put('.', '/opt/dockcluster')
     run('mkdir apps')

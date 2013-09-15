@@ -1,4 +1,18 @@
+Provides fabric commands for deploying docker instances to machines provisioned through vagrant. Uses vagrant-aws to deploy to AWS.
 
+
+Internal Services
+=================
+
+The following services are overhead for orchestraton:
+
+* Redis for state management
+* Hipache for load balancing http services
+* samalba/docker-registry for pushing locally built apps
+
+
+Commands
+========
 
 Getting started::
 
@@ -14,6 +28,7 @@ Adding an app::
     fab up_app:myapp
     fab update_app:myapp
     fab add_domain:myapp,www.myapp.com
+
 
 TODO
 ====

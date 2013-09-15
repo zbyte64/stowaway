@@ -1,0 +1,3 @@
+fabric
+git+git://github.com/zbyte64/micromodels.git#egg=micromodels
+git+git://github.com/zbyte64/micromodels-collections.git#egg=micromodels-collections
