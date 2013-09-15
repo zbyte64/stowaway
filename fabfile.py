@@ -15,7 +15,7 @@ recorded_envs = set()
 
 def vagrant():
     # use vagrant ssh key
-    result = local('vagrant ssh-config | grep IdentityFile', capture=True)
+    result = local('vagrant ssh-config', capture=True)
 
     info = dict()
     for line in result.split('\n'):
@@ -24,16 +24,15 @@ def vagrant():
             key, value = line.split(' ', 1)
             info[key] = value
 
-    print 'vagrant ssh info:', result, info
-
     env.key_filename = info['IdentityFile']
-    env.hosts = ['%s:%s' % (info['HostName'], info['Port'])]
+    env.host_string = '%s:%s' % (info['HostName'], info['Port'])
+    env.hosts = [env.host_string]
     env.user = info['User']
 
 
 def aws():
     env.PROVIDER = 'aws'
-    env.BOX_NAME = 'awsbox'
+    environ['BOX_NAME'] = 'awsbox'
     env.DOCKER_PROVISION = 'vagrant up --provider=aws'
     result = local('vagrant box list', capture=True)
     if 'awsbox' not in result:
@@ -49,7 +48,7 @@ def load_settings(path=None):
             m = ENV_LINE.match(line)
             if m:
                 recorded_envs.add(m.group(1))
-                environ[m.group(1)] = m.group(2)
+                environ[m.group(1).strip()] = m.group(2).strip()
         env.update(environ)
         if env.get('PROVISIONER') == 'aws':
             aws()
@@ -87,63 +86,72 @@ def awssetup():
         'AWS_SECURITY_GROUPS', 'AWS_MACHINE'])
     write_settings()
     aws()
+    provision()
     initialize()
+
+
+def provision():
+    local('%(DOCKER_PROVISION)s' % env)
 
 
 def initialize():
     #provision and install docker
-    result = local('%(DOCKER_PROVISION)s' % env, capture=True)
-    print 'Provision result:', result
+    #provision()
+    #print 'Provision result:', result
     vagrant()  # load connection info
     #copy self
-    put('.', '/opt/dockcluster')
-    run('mkdir apps')
+    for app in ['image_store', 'redis', 'hipache']:
+        run('mkdir -p ~/dockcluster/%s' % app)
+        put('%s/*' % app, '~/dockcluster/%s' % app)
+    run('mkdir -p ~/apps')
     #sudo('apt-get update')
-    sudo('apt-get install redis-server') #purely for redis-cli
+    #sudo('apt-get install -q -y redis-server') #purely for redis-cli
 
     for app in ['image_store', 'redis', 'hipache']:
-        with cd('/opt/dockcluster/' + app):
-            sudo('docker build -t %s.' % app)
+        with cd('dockcluster/' + app):
+            sudo('docker build -t=sys/%s .' % app)
 
     #TODO set password or tunnel to redis
-    env.REDIS_URI = 'redis://%%(HOST)s/%s' % up_sys('redis', 6379,
-        {'REDIS_PASSWORD':gencode(12)}) % env
+    env.REDIS_URI = 'redis://%s' % up_sys('redis', 6379,
+        {'REDIS_PASSWORD':gencode(12)})
     #TODO mount ssl cert
-    env.HIPACHE_URI = 'https://%%(HOST)s/%s' % up_sys('hipache', '80 443',
-        {'REDIS_URI': env.REDIS_URI}) % env
-    env.IMAGESTORE_URI = 'https://%%(HOST)s/%s' % up_sys('image_store') % env
+    env.HIPACHE_URI = 'http://%s' % up_sys('hipache', 80,
+        {'REDIS_URI': env.REDIS_URI})
+    #TODO make ssl
+    env.IMAGESTORE_URI = 'http://%s' % up_sys('image_store', 5000)
 
     recorded_envs.update(['REDIS_URI', 'HIPACHE_URI', 'IMAGESTORE_URI'])
 
     for app in ['image_store', 'redis', 'hipache']:
-        with cd(app):
-            sudo('docker push %s %(IMAGESTORE_URI)s' % app)
+        with cd('dockcluster/' + app):
+            sudo('docker push %%(IMAGESTORE_URI)s/sys/%s' % app % env)
 
     write_settings()
 
 
 def up_sys(appname, port=None, environ={}):
-    up_app(appname, port, environ, True)
+    return up_app(appname, port, environ, True)
 
 
 def up_app(appname, port=None, environ={}, system=False):
     if not system:
-        appname = 'app-%s' % appname
+        appname = 'app/%s' % appname
     #TODO select node
     node = 'localhost'
-    e_args = ' '.join(['-e=%s=%s' % (key, value)
+    e_args = ' '.join(['-e %s=%s' % (key, value)
         for key, value in environ.items()])
     if port:
-        result = sudo('docker run %s -p=%s %s' % (appname, port, e_args), capture=True)
+        result = sudo('docker run -d -p %s %s %s' % (port, e_args, appname))
     else:
-        result = sudo('docker run %s %s' % (appname, e_args), capture=True)
+        result = sudo('docker run -d %s %s' % (e_args, appname))
         #TODO parse port
-    #TODO parse container id
-    print 'docker run result:', result
+
+    container_id = result.strip().rsplit()[-1]
+    print 'docker run result:', container_id, '\n', result
     uri = '%s:%s' % (node, port)
 
-    from .state import appCollection
-    appCollection.create(appname=appname, path=uri, node=node) #size, container_id
+    #from .state import appCollection
+    #appCollection.create(appname=appname, path=uri, node=node) #size, container_id
 
     if not system:
         join_mesh(appname, uri)
@@ -161,15 +169,16 @@ def add_app(appname, giturl):
     with cd('apps'):
         run('git clone %s %s' % (giturl, appname))
         with cd(appname):
-            sudo('docker build -t=app-%s .' % appname)
-            sudo('docker push app-%s %%(IMAGESTORE_URI)s' % appname % env)
+            sudo('docker build -t=app/%s .' % appname)
+            sudo('docker push %%(IMAGESTORE_URI)s/app/%s' %
+                (appname, appname) % env)
 
 
 def update_app(appname):
     with cd('apps/%s' % appname):
         run('git pull')
-        sudo('docker build -t=app-%s .' % appname)
-        sudo('docker push app-%s %%(IMAGESTORE_URI)s' % appname % env)
+        sudo('docker build -t=app/%s .' % appname)
+        sudo('docker push %%(IMAGESTORE_URI)s/app/%s' % appname % env)
     #TODO update app instances
     #from .state import appCollection
     #for instance in appCollection[appname]
