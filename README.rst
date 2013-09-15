@@ -23,11 +23,11 @@ Getting started::
 
 Adding an app::
 
-    fab add_app:myapp,https://github.com/username/proj.git
+    fab add_app:shipyard,https://github.com/ehazlett/shipyard.git
     #TODO: fab add_size:regular,RAM=512,CPU=1
-    fab up_app:myapp
-    fab update_app:myapp
-    fab add_domain:myapp,www.myapp.com
+    fab up_app:shipyard
+    fab update_app:shipyard
+    fab add_domain:shipyard,www.shipyard.com
 
 
 TODO

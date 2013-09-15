@@ -37,7 +37,9 @@ def aws():
     result = local('vagrant box list', capture=True)
     if 'awsbox' not in result:
         local('vagrant box add awsbox https://github.com/mitchellh/vagrant-aws/raw/master/dummy.box')
-
+    result = local('vagrant status', capture=True)
+    if 'default' in result and 'running' in result:
+        vagrant()
 
 def load_settings(path=None):
     env.update(environ)
@@ -106,7 +108,7 @@ def initialize():
         put('%s/*' % app, '~/dockcluster/%s' % app)
     run('mkdir -p ~/apps')
     #sudo('apt-get update')
-    #sudo('apt-get install -q -y redis-server') #purely for redis-cli
+    sudo('apt-get install -q -y git-core')
 
     for app in ['image_store', 'redis', 'hipache']:
         with cd('dockcluster/' + app):
@@ -116,11 +118,13 @@ def initialize():
     up_sys('redis', '6379:6379', {'REDIS_PASSWORD': gencode(12)})
     env.REDIS_URI = 'redis://localhost:6379'
 
-    #TODO mount ssl cert
+    #TODO mount ssl cert to /etc/ssl/ssl.(crt|key)
+    #TODO internode should be ssl, fetch from /etc/ssl/ssl.crt
     up_sys('hipache', '80:80', {'REDIS_URI': env.REDIS_URI})
     env.HIPACHE_URI = 'http://localhost:80'
 
     #TODO make ssl with private ip
+    #TODO maintain list of accepted root certs from deployed instances
     up_sys('image_store', '4990:5000')
     env.IMAGESTORE_URI = 'http://localhost:4990'
 
@@ -176,8 +180,7 @@ def add_app(appname, giturl):
         run('git clone %s %s' % (giturl, appname))
         with cd(appname):
             sudo('docker build -t=app/%s .' % appname)
-            sudo('docker push %%(IMAGESTORE_URI)s/app/%s' %
-                (appname, appname) % env)
+            sudo('docker push %%(IMAGESTORE_URI)s/app/%s' % appname % env)
 
 
 def update_app(appname):
