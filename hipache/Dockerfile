@@ -8,10 +8,10 @@ RUN	npm install hipache -g
 RUN	mkdir -p /var/log/supervisor
 ADD	./supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 ADD	./config.json /usr/local/lib/node_modules/hipache/config/config.json
-ADD ./run.py /usr/local/bin/run
+ADD ./run.py /usr/local/bin/run.py
 
 EXPOSE 80
 EXPOSE 443
 
-CMD ["/bin/sh", "-e", "/usr/local/bin/run"]
+CMD ["/usr/bin/python", "/usr/local/bin/run.py"]
 

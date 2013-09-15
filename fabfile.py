@@ -61,7 +61,7 @@ def write_settings(path=None):
         path = environ.get('DOCKCLUSTER_ENV', '.env')
     outfile = open(path, 'w')
     for key in recorded_envs:
-        outfile.write('%s= %s\n' % (key, env.get(key)))
+        outfile.write('%s=%s\n' % (key, env.get(key)))
     outfile.close()
 
 
@@ -94,6 +94,7 @@ def provision():
     local('%(DOCKER_PROVISION)s' % env)
 
 
+#TODO make this into a privileged Dockerfile
 def initialize():
     #provision and install docker
     #provision()
@@ -112,16 +113,16 @@ def initialize():
             sudo('docker build -t=sys/%s .' % app)
 
     #TODO set password or tunnel to redis
-    up_sys('redis', '6379:6379', {'REDIS_PASSWORD':gencode(12)})
+    up_sys('redis', '6379:6379', {'REDIS_PASSWORD': gencode(12)})
     env.REDIS_URI = 'redis://localhost:6379'
 
     #TODO mount ssl cert
     up_sys('hipache', '80:80', {'REDIS_URI': env.REDIS_URI})
     env.HIPACHE_URI = 'http://localhost:80'
 
-    #TODO make ssl
+    #TODO make ssl with private ip
     up_sys('image_store', '4990:5000')
-    env.IMAGESTORE_URI = 'http://localhost:4990' #TODO private ip
+    env.IMAGESTORE_URI = 'http://localhost:4990'
 
     recorded_envs.update(['REDIS_URI', 'HIPACHE_URI', 'IMAGESTORE_URI'])
 
@@ -137,7 +138,9 @@ def up_sys(appname, port=None, environ={}):
 
 
 def up_app(appname, port=None, environ={}, system=False):
-    if not system:
+    if system:
+        appname = 'sys/%s' % appname
+    else:
         appname = 'app/%s' % appname
     #TODO select node
     node = 'localhost'

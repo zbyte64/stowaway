@@ -6,7 +6,7 @@ import subprocess
 from urlparse import urlparse, uses_netloc
 
 
-PATH = '/usr/local/lib/node_modules/hipache/config/config.json',
+PATH = '/usr/local/lib/node_modules/hipache/config/config.json'
 config = json.load(open(PATH, 'r'))
 
 if 'REDIS_URI' in os.environ:
@@ -20,4 +20,4 @@ if 'REDIS_URI' in os.environ:
 
 json.dump(config, open(PATH, 'w'))
 
-subprocess.call("supervisord", "-n")
+subprocess.call(["supervisord", "-n"])
