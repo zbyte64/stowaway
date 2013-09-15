@@ -6,7 +6,6 @@ BOX_URI = ENV['BOX_URI'] || "http://files.vagrantup.com/precise64.box"
 VF_BOX_URI = ENV['BOX_URI'] || "http://files.vagrantup.com/precise64_vmware_fusion.box"
 AWS_REGION = ENV['AWS_REGION'] || "us-east-1"
 AWS_AMI    = ENV['AWS_AMI']    || "ami-e1357b88"
-FORWARD_DOCKER_PORTS = ENV['FORWARD_DOCKER_PORTS']
 
 Vagrant::Config.run do |config|
   # Setup virtual machine box. This VM configuration code is always executed.
@@ -82,16 +81,13 @@ Vagrant::VERSION >= "1.1.0" and Vagrant.configure("2") do |config|
   end
 end
 
-if !FORWARD_DOCKER_PORTS.nil?
-  Vagrant::VERSION < "1.1.0" and Vagrant::Config.run do |config|
-    (49000..49900).each do |port|
-      config.vm.forward_port port, port
-    end
-  end
-
-  Vagrant::VERSION >= "1.1.0" and Vagrant.configure("2") do |config|
-    (49000..49900).each do |port|
-      config.vm.network :forwarded_port, :host => port, :guest => port
-    end
-  end
+Vagrant::VERSION < "1.1.0" and Vagrant::Config.run do |config|
+  config.vm.forward_port 6379, 806379
+  config.vm.forward_port 80, 8080
 end
+
+Vagrant::VERSION >= "1.1.0" and Vagrant.configure("2") do |config|
+  config.vm.network :forwarded_port, :host => 806379, :guest => 6379
+  config.vm.network :forwarded_port, :host => 8080, :guest => 80
+end
+

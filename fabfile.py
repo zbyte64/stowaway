@@ -103,12 +103,15 @@ def initialize():
     #print 'Provision result:', result
     vagrant()  # load connection info
     #copy self
+    put('redis-cli.py', '~/redis-cli.py')
     for app in ['image_store', 'redis', 'hipache']:
         run('mkdir -p ~/dockcluster/%s' % app)
         put('%s/*' % app, '~/dockcluster/%s' % app)
     run('mkdir -p ~/apps')
     #sudo('apt-get update')
-    sudo('apt-get install -q -y git-core')
+    sudo('apt-get install -q -y git-core python-setuptools')
+    sudo('easy_install pip')
+    sudo('pip install redis')
 
     for app in ['image_store', 'redis', 'hipache']:
         with cd('dockcluster/' + app):
@@ -154,10 +157,12 @@ def up_app(appname, port=None, environ={}, system=False):
         result = sudo('docker run -d -p %s %s %s' % (port, e_args, appname))
     else:
         result = sudo('docker run -d %s %s' % (e_args, appname))
-        #TODO parse port
 
     container_id = result.strip().rsplit()[-1]
-    print 'docker run result:', container_id, '\n', result
+    if not port:
+        result = sudo('docker port %s %s' % (container_id, 80))
+        port = int(result.strip())
+
     uri = '%s:%s' % (node, port)
 
     #from .state import appCollection
@@ -171,7 +176,7 @@ def up_app(appname, port=None, environ={}, system=False):
 def join_mesh(appname, endpoint):
     #TODO https all internal traffic
     #install ssl, and make it talk only to hipache's cert
-    sudo('redis-cli rpush frontend:%s http://%s' % (appname, endpoint))
+    redis_cli('rpush', 'frontend:%s' % appname, 'http://%s' % endpoint)
 
 
 def add_app(appname, giturl):
@@ -193,13 +198,17 @@ def update_app(appname):
     #for instance in appCollection[appname]
 
 
+def redis_cli(*args):
+    return run('python redis-cli.py ' + ' '.join(["%s" % arg for arg in args]))
+
+
 def add_domain(appname, domain):
-    sudo('redis-cli rpush frontend:%s http://%s' % (domain, appname))
+    redis_cli('rpush', 'frontend:%s' % domain, 'http://%s' % appname)
 
 
 def remove_domain(appname, domain):
     #TODO lookup redis docs
-    sudo('redis-cli rpop frontend:%s http://%s' % (domain, appname))
+    redis_cli('rpop', 'frontend:%s' % domain, 'http://%s' % appname)
 
 
 load_settings()
