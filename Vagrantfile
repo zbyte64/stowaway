@@ -37,7 +37,7 @@ Vagrant::Config.run do |config|
         "echo '\"vagrant reload\" can be used in about 2 minutes to activate the new guest additions.'; "
     end
     # Activate new kernel
-    pkg_cmd << "shutdown -r +1; "
+    #pkg_cmd << "shutdown -r +1; "
     config.vm.provision :shell, :inline => pkg_cmd
   end
 end

@@ -28,6 +28,7 @@ def vagrant():
     env.host_string = '%s:%s' % (info['HostName'], info['Port'])
     env.hosts = [env.host_string]
     env.user = info['User']
+    env.root_hostname = run('hostname').strip()
 
 
 def aws():
@@ -119,17 +120,17 @@ def initialize():
 
     #TODO set password or tunnel to redis
     up_sys('redis', '6379:6379', {'REDIS_PASSWORD': gencode(12)})
-    env.REDIS_URI = 'redis://localhost:6379'
+    env.REDIS_URI = 'redis://%(root_hostname):6379' % env
 
     #TODO mount ssl cert to /etc/ssl/ssl.(crt|key)
     #TODO internode should be ssl, fetch from /etc/ssl/ssl.crt
     up_sys('hipache', '80:80', {'REDIS_URI': env.REDIS_URI})
-    env.HIPACHE_URI = 'http://localhost:80'
+    env.HIPACHE_URI = 'http://%(root_hostname):80' % env
 
     #TODO make ssl with private ip
     #TODO maintain list of accepted root certs from deployed instances
     up_sys('image_store', '4990:5000')
-    env.IMAGESTORE_URI = 'http://localhost:4990'
+    env.IMAGESTORE_URI = 'http://%(root_hostname):4990' % env
 
     recorded_envs.update(['REDIS_URI', 'HIPACHE_URI', 'IMAGESTORE_URI'])
 
