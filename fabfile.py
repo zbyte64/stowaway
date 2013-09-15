@@ -47,7 +47,7 @@ def load_settings(path=None):
         for line in open(path, 'r').readlines():
             m = ENV_LINE.match(line)
             if m:
-                recorded_envs.add(m.group(1))
+                recorded_envs.add(m.group(1).strip())
                 environ[m.group(1).strip()] = m.group(2).strip()
         env.update(environ)
         if env.get('PROVISIONER') == 'aws':
@@ -61,7 +61,7 @@ def write_settings(path=None):
         path = environ.get('DOCKCLUSTER_ENV', '.env')
     outfile = open(path, 'w')
     for key in recorded_envs:
-        outfile.write('%s= %s' % (key, env.get(key)))
+        outfile.write('%s= %s\n' % (key, env.get(key)))
     outfile.close()
 
 
@@ -112,13 +112,16 @@ def initialize():
             sudo('docker build -t=sys/%s .' % app)
 
     #TODO set password or tunnel to redis
-    env.REDIS_URI = 'redis://%s' % up_sys('redis', 6379,
-        {'REDIS_PASSWORD':gencode(12)})
+    up_sys('redis', '6379:6379', {'REDIS_PASSWORD':gencode(12)})
+    env.REDIS_URI = 'redis://localhost:6379'
+
     #TODO mount ssl cert
-    env.HIPACHE_URI = 'http://%s' % up_sys('hipache', 80,
-        {'REDIS_URI': env.REDIS_URI})
+    up_sys('hipache', '80:80', {'REDIS_URI': env.REDIS_URI})
+    env.HIPACHE_URI = 'http://localhost:80'
+
     #TODO make ssl
-    env.IMAGESTORE_URI = 'http://%s' % up_sys('image_store', 5000)
+    up_sys('image_store', '4990:5000')
+    env.IMAGESTORE_URI = 'http://localhost:4990' #TODO private ip
 
     recorded_envs.update(['REDIS_URI', 'HIPACHE_URI', 'IMAGESTORE_URI'])
 
