@@ -28,7 +28,7 @@ def vagrant():
     env.host_string = '%s:%s' % (info['HostName'], info['Port'])
     env.hosts = [env.host_string]
     env.user = info['User']
-    env.root_hostname = run('hostname').strip()
+    env.root_hostname = info['HostName'] or env.host or sudo('echo $HOSTNAME')
 
 
 def aws():
@@ -41,6 +41,7 @@ def aws():
     result = local('vagrant status', capture=True)
     if 'default' in result and 'running' in result:
         vagrant()
+
 
 def load_settings(path=None):
     env.update(environ)
@@ -97,6 +98,13 @@ def provision():
     local('%(DOCKER_PROVISION)s' % env)
 
 
+def push_base():
+    put('redis-cli.py', '~/redis-cli.py')
+    for app in ['image_store', 'redis', 'hipache']:
+        run('mkdir -p ~/dockcluster/%s' % app)
+        put('%s/*' % app, '~/dockcluster/%s' % app)
+
+
 #TODO make this into a privileged Dockerfile
 def initialize():
     #provision and install docker
@@ -104,10 +112,7 @@ def initialize():
     #print 'Provision result:', result
     vagrant()  # load connection info
     #copy self
-    put('redis-cli.py', '~/redis-cli.py')
-    for app in ['image_store', 'redis', 'hipache']:
-        run('mkdir -p ~/dockcluster/%s' % app)
-        put('%s/*' % app, '~/dockcluster/%s' % app)
+    push_base()
     run('mkdir -p ~/apps')
     #sudo('apt-get update')
     sudo('apt-get install -q -y git-core python-setuptools')
@@ -120,17 +125,17 @@ def initialize():
 
     #TODO set password or tunnel to redis
     up_sys('redis', '6379:6379', {'REDIS_PASSWORD': gencode(12)})
-    env.REDIS_URI = 'redis://%(root_hostname):6379' % env
+    env.REDIS_URI = 'redis://%(root_hostname)s:6379' % env
 
     #TODO mount ssl cert to /etc/ssl/ssl.(crt|key)
     #TODO internode should be ssl, fetch from /etc/ssl/ssl.crt
     up_sys('hipache', '80:80', {'REDIS_URI': env.REDIS_URI})
-    env.HIPACHE_URI = 'http://%(root_hostname):80' % env
+    env.HIPACHE_URI = 'http://%(root_hostname)s:80' % env
 
     #TODO make ssl with private ip
     #TODO maintain list of accepted root certs from deployed instances
     up_sys('image_store', '4990:5000')
-    env.IMAGESTORE_URI = 'http://%(root_hostname):4990' % env
+    env.IMAGESTORE_URI = 'http://%(root_hostname)s:4990' % env
 
     recorded_envs.update(['REDIS_URI', 'HIPACHE_URI', 'IMAGESTORE_URI'])
 
@@ -211,5 +216,9 @@ def remove_domain(appname, domain):
     #TODO lookup redis docs
     redis_cli('rpop', 'frontend:%s' % domain, 'http://%s' % appname)
 
+
+def export():
+    for key in recorded_envs:
+        print 'export %s=%s' % (key, env.get(key))
 
 load_settings()
