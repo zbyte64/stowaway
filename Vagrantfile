@@ -20,7 +20,9 @@ Vagrant::Config.run do |config|
       "echo deb http://get.docker.io/ubuntu docker main > /etc/apt/sources.list.d/docker.list;" \
       "apt-get update -qq; apt-get install -q -y --force-yes lxc-docker; "
     # Add Ubuntu raring backported kernel
-    pkg_cmd << "apt-get update -qq; apt-get install -q -y linux-image-extra-`uname -r`; "
+    pkg_cmd << "apt-get update -qq; apt-get install -q -y linux-image-extra-`uname -r` python python-setuptools git-core; "
+    #Python injects
+    pkg_cmd << "easy_install pip; pip install redis; "
     # Add guest additions if local vbox VM. As virtualbox is the default provider,
     # it is assumed it won't be explicitly stated.
     if ENV["VAGRANT_DEFAULT_PROVIDER"].nil? && ARGV.none? { |arg| arg.downcase.start_with?("--provider") }
@@ -35,9 +37,9 @@ Vagrant::Config.run do |config|
         "sed -i -E 's#^exit 0#[ -x /root/guest_additions.sh ] \\&\\& /root/guest_additions.sh#' /etc/rc.local; " \
         "echo 'Installation of VBox Guest Additions is proceeding in the background.'; " \
         "echo '\"vagrant reload\" can be used in about 2 minutes to activate the new guest additions.'; "
+        pkg_cmd << "shutdown -r +1; "
     end
     # Activate new kernel
-    #pkg_cmd << "shutdown -r +1; "
     config.vm.provision :shell, :inline => pkg_cmd
   end
 end

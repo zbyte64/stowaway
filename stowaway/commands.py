@@ -43,44 +43,25 @@ fab app_add_domain:<name>,<domain>
 '''
 import os
 import shutil
-import re
 
 from vagrant import Vagrant
 
-from fabric.api import env, local, run, put, sudo, prompt, settings
-from fabric.context_managers import cd
+from fabric.api import env, local, run, put, sudo, prompt
 
 from .state import nodeCollection, instanceCollection, configCollection, balancerCollection, appCollection
+from .utils import machine, gencode
 
 
 env.AWS_BOX = 'https://github.com/mitchellh/vagrant-aws/raw/master/dummy.box'
 env.PROVISIONER = None
 env.DOCKER_REGISTRY = None
-env.TOOL_ROOT = os.path.split(os.path.abspath(__filename__))[0]
+env.TOOL_ROOT = os.path.split(os.path.abspath(__name__))[0]
 env.WORK_DIR = os.getcwd()
 env.VAGRANT = None
 
 
-class machine(object):
-    def __init__(self, name):
-        self.name = name
-    
-    def make_settings_patch(self):
-        self.settings_patch = settings(
-            host_string = env.VAGRANT.user_hostname_port(vm_name=self.name),
-            key_filename = env.VAGRANT.keyfile(vm_name=self.name),
-            disable_known_hosts = True)
-    
-    def __enter__(self):
-        self.make_settings_patch()
-        self.settings_patch.__enter__()
-    
-    def __exit__(self):
-        self.settings_patch.__exit__()
-
-
 def setup(workingdir=None):
-    shutil.copy(os.path.join(env.TOOL_ROOT, 'Vagrantfile'), 
+    shutil.copy(os.path.join(env.TOOL_ROOT, 'Vagrantfile'),
                 env.WORK_DIR)
     env.VAGRANT = Vagrant(env.WORK_DIR)
     #provisioner = prompt('What provision to use? (aws|...)')
@@ -100,9 +81,9 @@ def setupaws():
     environ['AWS_KEYPAIR_NAME'] = prompt('Enter your AWS Key pair name')
     environ['AWS_SSH_PRIVKEY'] = prompt('Enter your AWS SSH private key path')
     configCollection['environ'] = environ
-    
+
     load_settings()
-    
+
     env.VAGRANT.box_add('awsbox', env.AWS_BOX, provider='aws')
 
 
@@ -114,10 +95,6 @@ def load_settings():
         env.VAGRANT = Vagrant(env.WORK_DIR)
 
 
-def gencode(length):
-    pass
-
-
 def provision(name=None):
     load_settings()
     if name is None:
@@ -125,7 +102,7 @@ def provision(name=None):
     env.VAGRANT.up(vm_name=name, provider=env.PROVISIONER)
     return nodeCollection.create(
         name=name,
-        hostname=env.VAGRANT.hostname(name),    
+        hostname=env.VAGRANT.hostname(name),
     )
 
 
@@ -138,7 +115,7 @@ def set_registry(uri):
 
 def export_image(imagename, *names):
     if env.DOCKER_REGISTRY:
-        local('sudo docker push %s --registry=%s' % 
+        local('sudo docker push %s --registry=%s' %
             (imagename, env.DOCKER_REGISTRY))
         return
     if not names:
@@ -164,36 +141,36 @@ def run_image(imagename, name=None, ports='', memory=256, cpu=1, **envparams):
         for key, value in envparams.items()])
 
     p_args = ' '.join(['-p %s' % port
-        for port in ports]
-    
-    args = ('%s %s -m=%s -c=%s' %
-        (e_args, p_args, memory, cpu)).strip()
+        for port in ports])
+
+    args = '%s %s -m=%s -c=%s' % (e_args, p_args, memory, cpu)
+    args = args.strip()
 
     with machine(name):
         result = sudo('docker run -d %s %s' % (args, imagename))
 
         container_id = result.strip().rsplit()[-1]
-        
+
         paths = list()
         hostname = env.VAGRANT.hostname(name)
-        
+
         if not ports:
             result = sudo('docker inspect %s' % container_id)
             #TODO
             ports = [result.strip()]
-        
+
         for port in ports:
             uri = '%s:%s' % (hostname, port.split(':')[0])
             paths.append(uri)
-        
-        return instanceCollection.create({
+
+        return instanceCollection.create(
             machine_name=name,
             image_name=imagename,
             memory=memory,
             cpu=cpu,
             container_id=container_id,
             paths=paths,
-        })
+        )
 
 
 def stop_instance(container_id, name=None):
@@ -217,20 +194,20 @@ def shut_it_down(*names):
 def register_balancer(endpoint, redis, name=None):
     if name is None:
         name = gencode(12)
-    return balancerCollection.create({
+    return balancerCollection.create(
         name=name,
         endpoint_uri=endpoint,
         redis_uri=redis
-    })
+    )
 
 
 def add_app(name, imagename, balancername):
-    return appCollection.create({
+    return appCollection.create(
         name=name,
         image_name=imagename,
         balancer_name=balancername
-    })
-    
+    )
+
 
 def app_config(name, **environ):
     app = appCollection.get(name=name)
@@ -241,7 +218,7 @@ def app_config(name, **environ):
 def app_remove_config(name, *keys):
     app = appCollection.get(name=name)
     for key in keys:
-        app.environ.pop(environ, None)
+        app.environ.pop(key, None)
     return app.save()
 
 #num=-1 to descale
@@ -275,5 +252,5 @@ def app_remove_domain(name, domain):
 
 def redis_cli(uri, *args):
     #TODO
-    return run('python redis-cli.py ' + ' '.join(["%s" % arg for arg in args]))
+    return run('python redis_cli.py ' + ' '.join(["%s" % arg for arg in args]))
 
