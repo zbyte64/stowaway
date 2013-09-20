@@ -2,8 +2,11 @@
 import os
 import datetime
 
+from fabric.api import env
+
 import micromodels
 from microcollections.collections import Collection, RawCollection
+from microcollections.filestores import DirectoryFileStore
 
 from .datastores import JSONFileDataStore
 
@@ -42,7 +45,7 @@ class DockerInstance(micromodels.Model):
     memory = micromodels.IntegerField(required=False, help_text='In bytes')
     cpu = micromodels.IntegerField(required=False, help_text='CPU Shares')
     container_id = micromodels.CharField(required=False)
-    paths = micromodels.FieldCollection(micromodels.CharField())
+    paths = micromodels.FieldCollectionField(micromodels.CharField())
 
 
 class AppInstance(DockerInstance):
@@ -62,10 +65,12 @@ class Application(micromodels.Model):
     #environ = micromodels.PrimitiveField(default=dict)
 
 
-datastore = JSONFileDataStore(path=os.path.join(os.getcwd(), 'db.json'))
-nodeCollection = Collection(Node, datastore=datastore)
-instanceCollection = Collection(DockerInstance, datastore=datastore)
-configCollection = RawCollection(name='config', datastore=datastore)
-balancerCollection = Collection(Balancer, datastore=datastore)
-appCollection = Collection(Application, datastore=datastore)
+#CONSIDER: make lazy
+datastore = JSONFileDataStore(path=os.path.join(env.WORK_DIR, 'db'))
+filestore = DirectoryFileStore(os.path.join(env.WORK_DIR, 'filestore'))
+nodeCollection = Collection(Node, data_store=datastore, file_store=filestore)
+instanceCollection = Collection(DockerInstance, data_store=datastore, file_store=filestore)
+configCollection = RawCollection(name='config', data_store=datastore, file_store=filestore)
+balancerCollection = Collection(Balancer, data_store=datastore, file_store=filestore)
+appCollection = Collection(Application, data_store=datastore, file_store=filestore)
 

@@ -48,9 +48,6 @@ from vagrant import Vagrant
 
 from fabric.api import env, local, run, put, sudo, prompt
 
-from .state import nodeCollection, instanceCollection, configCollection, balancerCollection, appCollection
-from .utils import machine, gencode
-
 
 env.AWS_BOX = 'https://github.com/mitchellh/vagrant-aws/raw/master/dummy.box'
 env.PROVISIONER = None
@@ -58,6 +55,11 @@ env.DOCKER_REGISTRY = None
 env.TOOL_ROOT = os.path.split(os.path.abspath(__name__))[0]
 env.WORK_DIR = os.getcwd()
 env.VAGRANT = None
+
+#state sensitive
+from .state import nodeCollection, instanceCollection, configCollection, \
+    balancerCollection, appCollection
+from .utils import machine, gencode
 
 
 def setup(workingdir=None):
@@ -129,7 +131,7 @@ def export_image(imagename, *names):
 
 def run_image(imagename, name=None, ports='', memory=256, cpu=1, **envparams):
     ports = ports.split('-')
-    memory = memory * (1024 ** 3) #convert MB to Bytes
+    memory = memory * (1024 ** 3)  # convert MB to Bytes
     if not name:
         for node in nodeCollection.all():
             if node.can_fit(memory=memory, cpu=cpu):
@@ -221,15 +223,17 @@ def app_remove_config(name, *keys):
         app.environ.pop(key, None)
     return app.save()
 
-#num=-1 to descale
+
 def app_scale(name, num=1, process=None):
+    #num=-1 to descale
     num = int(num)
     app = appCollection.get(name=name)
     balancer = balancerCollection.get(name=app.balancer_name)
     if num > 0:
         for i in range(num):
             instance = run_image(app.image_name, **app.environ)
-            redis_cli(balancer.redis_uri, 'rpush', 'frontend:%s' % name, instance.paths[0])
+            redis_cli(balancer.redis_uri, 'rpush',
+                      'frontend:%s' % name, instance.paths[0])
     elif num < 0:
         instances = iter(instanceCollection.find(image_name=app.image_name))
         for i in range(abs(num)):
