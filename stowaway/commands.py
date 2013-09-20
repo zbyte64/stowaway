@@ -140,6 +140,7 @@ def _printobj(obj):
 def provision(name=None):
     if name is None:
         name = gencode(12)
+    os.environ['VM_NAME'] = name  # normally handled by machine
     env.VAGRANT.provision(vm_name=name, provider=env.PROVISIONER)
     env.VAGRANT.up(vm_name=name, no_provision=True)
     return _printobj(nodeCollection.create(
@@ -150,7 +151,8 @@ def provision(name=None):
 
 @configuredtask
 def remove_node(name):
-    env.VAGRANT.destroy(vm_name=name)
+    with machine(name):
+        env.VAGRANT.destroy(vm_name=name)
     nodeCollection.get(name=name).remove()
 
 

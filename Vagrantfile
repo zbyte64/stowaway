@@ -2,6 +2,7 @@
 # vi: set ft=ruby :
 
 BOX_NAME = ENV['BOX_NAME'] || "ubuntu"
+VM_NAME = ENV['VM_NAME']
 BOX_URI = ENV['BOX_URI'] || "http://files.vagrantup.com/precise64.box"
 VF_BOX_URI = ENV['BOX_URI'] || "http://files.vagrantup.com/precise64_vmware_fusion.box"
 AWS_REGION = ENV['AWS_REGION'] || "us-east-1"
@@ -42,7 +43,12 @@ Vagrant::Config.run do |config|
     # Activate new kernel
     config.vm.provision :shell, :inline => pkg_cmd
   end
-  #TODO define multiple machines here
+  if VM_NAME
+    config.vm.define VM_NAME, :primary => true do |dynamicbox|
+      dynamicbox.vm.box = BOX_NAME
+      dynamicbox.vm.box_url = BOX_URI
+    end
+  end
 end
 
 

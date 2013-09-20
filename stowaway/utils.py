@@ -1,6 +1,7 @@
 #misc for now
 import random
 import string
+import os
 
 from fabric.api import env, settings
 
@@ -18,9 +19,12 @@ class machine(object):
     def __enter__(self):
         self.make_settings_patch()
         self.settings_patch.__enter__()
+        self.old_vm_name = os.environ.get('VM_NAME', '')
+        os.environ['VM_NAME'] = self.name
 
     def __exit__(self):
         self.settings_patch.__exit__()
+        os.environ['VM_NAME'] = self.old_vm_name
 
 
 def gencode(size, chars=string.ascii_uppercase + string.digits):
