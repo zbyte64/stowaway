@@ -1,17 +1,15 @@
 # -*- coding: utf-8 -*-
-import micromodels
-from microcollections.collections import Collection
-from microcollections.datastores import MemoryDataStore
+import os
 import datetime
 
+import micromodels
+from microcollections.collections import Collection, RawCollection
 
-class ContainerSize(micromodels.Model):
-    name = micromodels.CharField()
-    memory = micromodels.IntegerField(required=False, help_text='In bytes')
-    cpu = micromodels.IntegerField(required=False, help_text='CPU Shares')
+from .datastores import JSONFileDataStore
 
 
 class Node(micromodels.Model):
+    name = micromodels.CharField()
     hostname = micromodels.CharField()
     created = micromodels.DateTimeField(default=datetime.datetime.now)
     memory_capacitiy = micromodels.IntegerField(required=False, help_text='In bytes')
@@ -38,17 +36,36 @@ class Node(micromodels.Model):
         return True
 
 
-class AppInstance(micromodels.Model):
-    appname = micromodels.CharField()
-    node = micromodels.CharField(help_text='Hostname')
+class DockerInstance(micromodels.Model):
+    machine_name = micromodels.CharField()
+    image_name = micromodels.CharField()
     memory = micromodels.IntegerField(required=False, help_text='In bytes')
     cpu = micromodels.IntegerField(required=False, help_text='CPU Shares')
     container_id = micromodels.CharField(required=False)
-    path = micromodels.CharField()
+    paths = micromodels.FieldCollection(micromodels.CharField())
 
 
-#TODO use redis on cluster
-datastore = MemoryDataStore()
-sizeCollection = Collection(ContainerSize, datastore=datastore)
+class AppInstance(DockerInstance):
+    appname = micromodels.CharField()
+
+
+class Balancer(micromodels.Model):
+    name = micromodels.CharField()
+    endpoint_uri = micromodels.CharField()
+    redis_uri = micromodels.CharField()
+
+
+class Application(micromodels.Model):
+    name = micromodels.CharField()
+    image_name = micromodels.CharField()
+    balancer_name = micromodels.CharField()
+    #environ = micromodels.PrimitiveField(default=dict)
+
+
+datastore = JSONFileDataStore(path=os.path.join(os.getcwd(), 'db.json'))
 nodeCollection = Collection(Node, datastore=datastore)
-appCollection = Collection(AppInstance, datastore=datastore)
+instanceCollection = Collection(DockerInstance, datastore=datastore)
+configCollection = RawCollection(name='config', datastore=datastore)
+balancerCollection = Collection(Balancer, datastore=datastore)
+appCollection = Collection(Application, datastore=datastore)
+
