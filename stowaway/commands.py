@@ -43,18 +43,22 @@ fab app_add_domain:<name>,<domain>
 '''
 import os
 import shutil
+from pprint import pprint
+from functools import wraps
 
-from vagrant import Vagrant
+from vagrant import Vagrant as BaseVagrant
 
-from fabric.api import env, local, run, put, sudo, prompt
+from fabric.api import env, local, run, put, sudo, prompt, task
 
 
 env.AWS_BOX = 'https://github.com/mitchellh/vagrant-aws/raw/master/dummy.box'
 env.PROVISIONER = None
 env.DOCKER_REGISTRY = None
-env.TOOL_ROOT = os.path.split(os.path.abspath(__name__))[0]
+env.TOOL_ROOT = os.path.split(os.path.split(os.path.abspath(__file__))[0])[0]
 env.WORK_DIR = os.getcwd()
+env.PROVISION_SETUPS = dict()
 env.VAGRANT = None
+env.SETTINGS_LOADED = False
 
 #state sensitive
 from .state import nodeCollection, instanceCollection, configCollection, \
@@ -62,31 +66,48 @@ from .state import nodeCollection, instanceCollection, configCollection, \
 from .utils import machine, gencode
 
 
+#TODO submit patch to python-vagrant
+class Vagrant(BaseVagrant):
+    def provision(self, vm_name=None, provider=None):
+        '''
+        Runs the provisioners defined in the Vagrantfile.
+        '''
+        provider_arg = '--provision-with=%s' % provider if provider else None
+        self._run_vagrant_command('provision', vm_name, provider_arg)
+
+
+@task
 def setup(workingdir=None):
-    shutil.copy(os.path.join(env.TOOL_ROOT, 'Vagrantfile'),
-                env.WORK_DIR)
+    if not os.path.exists(os.path.join(env.WORK_DIR, 'Vagrantfile')):
+        shutil.copy(os.path.join(env.TOOL_ROOT, 'Vagrantfile'),
+                    env.WORK_DIR)
     env.VAGRANT = Vagrant(env.WORK_DIR)
     #provisioner = prompt('What provision to use? (aws|...)')
-    setupaws()
+    provisioner = 'aws'
+    return env.PROVISION_SETUPS[provisioner]()
 
 
 def setupaws():
     environ = dict()
     environ['PROVISIONER'] = 'aws'
-    #TODO prompt for
-    #23 and 80 are required
-    environ['AWS_SECURITY_GROUPS'] = 'dockcluster'
-    environ['AWS_AMI'] = 'ami-e1357b88'
-    environ['AWS_MACHINE'] = 'm1.small'
+    environ['BOX_NAME'] = 'awsbox'
+
+    #ports 23 and 80 are required
+    environ['AWS_SECURITY_GROUPS'] = prompt('Enter AWS security group', default='dockcluster')
+    environ['AWS_AMI'] = prompt('Enter AWS AMI', default='ami-e1357b88')
+    environ['AWS_MACHINE'] = prompt('Enter AWS Machine Size', default='m1.small')
     environ['AWS_ACCESS_KEY_ID'] = prompt('Enter your AWS Access Key ID')
     environ['AWS_SECRET_ACCESS_KEY'] = prompt('Enter your AWS Secret Access Key')
     environ['AWS_KEYPAIR_NAME'] = prompt('Enter your AWS Key pair name')
-    environ['AWS_SSH_PRIVKEY'] = prompt('Enter your AWS SSH private key path')
+    default_pem_path = os.path.join(os.path.expanduser('~/.ssh'), environ['AWS_KEYPAIR_NAME'] + '.pem')
+    environ['AWS_SSH_PRIVKEY'] = prompt('Enter your AWS SSH private key path', default=default_pem_path)
     configCollection['environ'] = environ
 
     load_settings()
 
-    env.VAGRANT.box_add('awsbox', env.AWS_BOX, provider='aws')
+    env.VAGRANT.box_add('awsbox', env.AWS_BOX, provider='aws', force=True)
+
+env.PROVISION_SETUPS['aws'] = setupaws
 
 
 def load_settings():
@@ -95,19 +116,45 @@ def load_settings():
     env.update(environ)
     if not env.VAGRANT:
         env.VAGRANT = Vagrant(env.WORK_DIR)
+    env.SETTINGS_LOADED = True
 
 
+def configuredtask(func):
+    @wraps(func)
+    def wrap(*args, **kwargs):
+        if not env.SETTINGS_LOADED:
+            load_settings()
+        return func(*args, **kwargs)
+    return task(wrap)
+
+
+def _printobj(obj):
+    if hasattr(obj, 'to_dict'):
+        pprint(obj.to_dict(serial=True))
+    else:
+        pprint(obj)
+    return obj
+
+
+@configuredtask
 def provision(name=None):
-    load_settings()
     if name is None:
         name = gencode(12)
-    env.VAGRANT.up(vm_name=name, provider=env.PROVISIONER)
-    return nodeCollection.create(
+    env.VAGRANT.provision(vm_name=name, provider=env.PROVISIONER)
+    env.VAGRANT.up(vm_name=name, no_provision=True)
+    return _printobj(nodeCollection.create(
         name=name,
         hostname=env.VAGRANT.hostname(name),
-    )
+    ))
 
 
+@configuredtask
+def remove_node(name):
+    env.VAGRANT.destroy(vm_name=name)
+    nodeCollection.get(name=name).remove()
+
+
+@configuredtask
 def set_registry(uri):
     env.DOCKER_REGISTRY = uri
     environ = configCollection.get('environ') or dict()
@@ -115,6 +162,7 @@ def set_registry(uri):
     configCollection['environ'] = environ
 
 
+@configuredtask
 def export_image(imagename, *names):
     if env.DOCKER_REGISTRY:
         local('sudo docker push %s --registry=%s' %
@@ -129,6 +177,7 @@ def export_image(imagename, *names):
             sudo('docker import ~/image.tar')
 
 
+@configuredtask
 def run_image(imagename, name=None, ports='', memory=256, cpu=1, **envparams):
     ports = ports.split('-')
     memory = memory * (1024 ** 3)  # convert MB to Bytes
@@ -165,58 +214,63 @@ def run_image(imagename, name=None, ports='', memory=256, cpu=1, **envparams):
             uri = '%s:%s' % (hostname, port.split(':')[0])
             paths.append(uri)
 
-        return instanceCollection.create(
+        return _printobj(instanceCollection.create(
             machine_name=name,
             image_name=imagename,
             memory=memory,
             cpu=cpu,
             container_id=container_id,
             paths=paths,
-        )
+        ))
 
 
-def stop_instance(container_id, name=None):
-    if not name:
-        instance = instanceCollection.get(container_id=container_id)
-        name = instance.machine_name
+@configuredtask
+def stop_instance(container_id):
+    instance = instanceCollection.get(container_id=container_id)
+    name = instance.machine_name
     while machine(name):
         sudo('docker stop %s' % container_id)
-    instanceCollection.filter(container_id=container_id).delete()
+    instance.remove()
 
 
+@configuredtask
 def shut_it_down(*names):
     if not names:
         names = [node.name for node in nodeCollection.all()]
     for name in names:
         instances = instanceCollection.filter(machine_name=name)
         for instance in instances:
-            stop_instance(instance.container_id, name)
+            stop_instance(instance.container_id)
 
 
+@configuredtask
 def register_balancer(endpoint, redis, name=None):
     if name is None:
         name = gencode(12)
-    return balancerCollection.create(
+    return _printobj(balancerCollection.create(
         name=name,
         endpoint_uri=endpoint,
         redis_uri=redis
-    )
+    ))
 
 
+@configuredtask
 def add_app(name, imagename, balancername):
-    return appCollection.create(
+    return _printobj(appCollection.create(
         name=name,
         image_name=imagename,
         balancer_name=balancername
-    )
+    ))
 
 
+@configuredtask
 def app_config(name, **environ):
     app = appCollection.get(name=name)
     app.environ.update(environ)
     return app.save()
 
 
+@configuredtask
 def app_remove_config(name, *keys):
     app = appCollection.get(name=name)
     for key in keys:
@@ -224,6 +278,7 @@ def app_remove_config(name, *keys):
     return app.save()
 
 
+@configuredtask
 def app_scale(name, num=1, process=None):
     #num=-1 to descale
     num = int(num)
@@ -241,12 +296,14 @@ def app_scale(name, num=1, process=None):
             stop_instance(instance.container_id)
 
 
+@configuredtask
 def app_add_domain(name, domain):
     app = appCollection.get(name=name)
     balancer = balancerCollection.get(name=app.balancer_name)
     redis_cli(balancer.redis_uri, 'rpush', 'frontend:%s' % domain, name)
 
 
+@configuredtask
 def app_remove_domain(name, domain):
     app = appCollection.get(name=name)
     balancer = balancerCollection.get(name=app.balancer_name)
@@ -256,5 +313,34 @@ def app_remove_domain(name, domain):
 
 def redis_cli(uri, *args):
     #TODO
-    return run('python redis_cli.py ' + ' '.join(["%s" % arg for arg in args]))
+    return run('python redis_cli.py ' + uri + ' ' + ' '.join(["%s" % arg for arg in args]))
 
+
+def list_collection(col):
+    for obj in col.all():
+        pprint(col.get_serializable(obj))
+
+
+@configuredtask
+def list_nodes():
+    list_collection(nodeCollection)
+
+
+@configuredtask
+def list_instances():
+    list_collection(instanceCollection)
+
+
+@configuredtask
+def list_config():
+    list_collection(configCollection)
+
+
+@configuredtask
+def list_balancers():
+    list_collection(balancerCollection)
+
+
+@configuredtask
+def list_apps():
+    list_collection(appCollection)

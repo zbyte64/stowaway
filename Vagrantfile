@@ -42,6 +42,7 @@ Vagrant::Config.run do |config|
     # Activate new kernel
     config.vm.provision :shell, :inline => pkg_cmd
   end
+  #TODO define multiple machines here
 end
 
 

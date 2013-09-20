@@ -1,4 +1,7 @@
 #misc for now
+import random
+import string
+
 from fabric.api import env, settings
 
 
@@ -20,5 +23,5 @@ class machine(object):
         self.settings_patch.__exit__()
 
 
-def gencode(length):
-    pass
+def gencode(size, chars=string.ascii_uppercase + string.digits):
+    return ''.join(random.choice(chars) for x in range(size))
