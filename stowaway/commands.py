@@ -46,7 +46,7 @@ import shutil
 from pprint import pprint
 from functools import wraps
 
-from vagrant import Vagrant as BaseVagrant
+from vagrant import Vagrant
 
 from fabric.api import env, local, run, put, sudo, prompt, task
 
@@ -64,16 +64,6 @@ env.SETTINGS_LOADED = False
 from .state import nodeCollection, instanceCollection, configCollection, \
     balancerCollection, appCollection
 from .utils import machine, gencode
-
-
-#TODO submit patch to python-vagrant
-class Vagrant(BaseVagrant):
-    def provision(self, vm_name=None, provider=None):
-        '''
-        Runs the provisioners defined in the Vagrantfile.
-        '''
-        provider_arg = '--provision-with=%s' % provider if provider else None
-        self._run_vagrant_command('provision', vm_name, provider_arg)
 
 
 @task
@@ -141,8 +131,7 @@ def provision(name=None):
     if name is None:
         name = gencode(12)
     os.environ['VM_NAME'] = name  # normally handled by machine
-    env.VAGRANT.provision(vm_name=name, provider=env.PROVISIONER)
-    env.VAGRANT.up(vm_name=name, no_provision=True)
+    env.VAGRANT.up(vm_name=name, provider=env.PROVISIONER)
     return _printobj(nodeCollection.create(
         name=name,
         hostname=env.VAGRANT.hostname(name),
@@ -151,8 +140,8 @@ def provision(name=None):
 
 @configuredtask
 def remove_node(name):
-    with machine(name):
-        env.VAGRANT.destroy(vm_name=name)
+    os.environ['VM_NAME'] = name  # normally handled by machine:
+    env.VAGRANT.destroy(vm_name=name)
     nodeCollection.get(name=name).remove()
 
 
@@ -346,3 +335,12 @@ def list_balancers():
 @configuredtask
 def list_apps():
     list_collection(appCollection)
+
+
+@configuredtask
+def vagrant(cmd='', name=None):
+    if name:
+        os.environ['VM_NAME'] = name
+        local('vagrant %s' % cmd)
+    else:
+        local('vagrant %s' % cmd)

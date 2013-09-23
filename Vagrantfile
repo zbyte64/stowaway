@@ -2,16 +2,18 @@
 # vi: set ft=ruby :
 
 BOX_NAME = ENV['BOX_NAME'] || "ubuntu"
-VM_NAME = ENV['VM_NAME']
+VM_NAME = ENV['VM_NAME'] || "default"
 BOX_URI = ENV['BOX_URI'] || "http://files.vagrantup.com/precise64.box"
 VF_BOX_URI = ENV['BOX_URI'] || "http://files.vagrantup.com/precise64_vmware_fusion.box"
 AWS_REGION = ENV['AWS_REGION'] || "us-east-1"
 AWS_AMI    = ENV['AWS_AMI']    || "ami-e1357b88"
 
-Vagrant::Config.run do |config|
+Vagrant::Config.run do |global_config|
   # Setup virtual machine box. This VM configuration code is always executed.
-  config.vm.box = BOX_NAME
-  config.vm.box_url = BOX_URI
+  global_config.vm.define VM_NAME do |config|
+    config.vm.box = BOX_NAME
+    config.vm.box_url = BOX_URI
+
 
   # Provision docker and new kernel if deployment was not done.
   # It is assumed Vagrant can successfully launch the provider instance.
@@ -43,17 +45,14 @@ Vagrant::Config.run do |config|
     # Activate new kernel
     config.vm.provision :shell, :inline => pkg_cmd
   end
-  if VM_NAME
-    config.vm.define VM_NAME, :primary => true do |dynamicbox|
-      dynamicbox.vm.box = BOX_NAME
-      dynamicbox.vm.box_url = BOX_URI
-    end
   end
 end
 
 
 # Providers were added on Vagrant >= 1.1.0
-Vagrant::VERSION >= "1.1.0" and Vagrant.configure("2") do |config|
+Vagrant.configure("2") do |global_config|
+  global_config.vm.define VM_NAME do |config|
+  
   config.vm.provider :aws do |aws, override|
     aws.access_key_id = ENV["AWS_ACCESS_KEY_ID"]
     aws.secret_access_key = ENV["AWS_SECRET_ACCESS_KEY"]
@@ -88,15 +87,10 @@ Vagrant::VERSION >= "1.1.0" and Vagrant.configure("2") do |config|
     config.vm.box = BOX_NAME
     config.vm.box_url = BOX_URI
   end
-end
-
-Vagrant::VERSION < "1.1.0" and Vagrant::Config.run do |config|
-  config.vm.forward_port 6379, 806379
-  config.vm.forward_port 80, 8080
-end
-
-Vagrant::VERSION >= "1.1.0" and Vagrant.configure("2") do |config|
+  
   config.vm.network :forwarded_port, :host => 806379, :guest => 6379
   config.vm.network :forwarded_port, :host => 8080, :guest => 80
+  
+  end #end vm define
 end
 
