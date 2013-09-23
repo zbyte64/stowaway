@@ -27,6 +27,9 @@ Vagrant::Config.run do |global_config|
     #Python injects
     pkg_cmd << "easy_install pip; pip install redis; "
     # Add guest additions if local vbox VM. As virtualbox is the default provider,
+    
+    pkg_cmd << "cp #{File.join('/vagrant/', 'redis_cli.py')} /usr/local/bin/redis_cli.py"
+    
     # it is assumed it won't be explicitly stated.
     if ENV["VAGRANT_DEFAULT_PROVIDER"].nil? && ARGV.none? { |arg| arg.downcase.start_with?("--provider") }
       pkg_cmd << "apt-get install -q -y linux-headers-generic-lts-raring dkms; " \

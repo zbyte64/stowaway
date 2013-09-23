@@ -2,5 +2,7 @@
 import redis
 import sys
 
-r = redis.StrictRedis(host='localhost', port=6379, db=0)
-print r.execute_command(*sys.argv[1:])
+
+uri = sys.argv[1]
+r = redis.StrictRedis.from_url(uri)
+print r.execute_command(*sys.argv[2:])

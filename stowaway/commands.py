@@ -1,46 +1,4 @@
 # -*- coding: utf-8 -*
-'''
-Possible name: stowaway
-Idea:
-
-#gets you ready for aws
-fab awssetup
-
-#returns node name
-fab provision
-
-#returns port listing and a container id
-fab run_image:samalba/hipache
-fab stop_instance:container_id
-
-#deploy local image
-fab export_image:mylocalimage
-fab run_image:mylocalimage
-
-
-#status inspection
-fab list_instances(:filter=value)
-fab list_nodes(:filter=value)
-
-
-#for cluster creation
--- compile local dockerfiles --
-fab export_image:<system images>
-##fab run_image:docker-registry #for when we can lock it down
-fab run_image:redis,PASSWORD=r4nd0m
-fab run_image:hipache,port=80:80,REDIS_URI=<redis uri with pass>
-fab register_balancer:<hipache path>,<redis uri>[,<name>]
-
-fab export_image:<app image>
-fab add_app:<name>,<app image>,<balancer>
-#set environ, stored in the appCollection
-fab app_config:KEY1=VALUE1,KEY2=VALUE2
-fab app_remove_config:KEY1,KEY2
-#num=-1 to descale
-fab app_scale:<name>[,<num=1>,<process>]
-fab app_add_domain:<name>,<domain>
-
-'''
 import os
 import shutil
 from pprint import pprint
@@ -132,9 +90,18 @@ def provision(name=None):
         name = gencode(12)
     os.environ['VM_NAME'] = name  # normally handled by machine
     env.VAGRANT.up(vm_name=name, provider=env.PROVISIONER)
+
+    #TODO support box settings, ie box1 = m1.medium, us-east1
+    cpu = env.get('CPU_CAPACITY')
+    cpu = int(cpu) if cpu else None
+    memory = env.get('MEMORY_CAPACITY')
+    memory = int(memory) if memory else None
+
     return _printobj(nodeCollection.create(
         name=name,
         hostname=env.VAGRANT.hostname(name),
+        cpu_capacity=cpu,
+        memory_capacity=memory,
     ))
 
 
@@ -344,3 +311,32 @@ def vagrant(cmd='', name=None):
         local('vagrant %s' % cmd)
     else:
         local('vagrant %s' % cmd)
+
+
+@task
+def build_base():
+    base_path = os.path.join(env.TOOL_ROOT, 'stowaway', 'dockerfiles')
+    for name in os.listdir(base_path):
+        full_path = os.path.join(base_path, name)
+        if not name.startswith('.') and os.path.isdir(full_path):
+            tag = 'sys/%s' % name
+            local('cd %s && sudo docker build -t="%s" .' % (full_path, tag))
+
+
+@configuredtask
+def install_app_mgmt(compile_base=True):
+    compile_base = str(compile_base).lower() in ['true', '1']
+    if compile_base:
+        build_base()
+
+    export_image('sys/redis')
+    export_image('sys/hipache')
+
+    redis_password = gencode()
+    redis = run_image('sys/redis', PASSWORD=redis_password)
+    redis_uri = 'redis://:%s@%s/0' % (redis_password, redis.paths[0])
+
+    hipache = run_image('sys/hipache', ports='80:80', REDIS_URI=redis_uri)
+    hipache_uri = 'http://' + hipache.paths[0]
+
+    return register_balancer(hipache_uri, redis_uri)
