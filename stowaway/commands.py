@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*
 import os
 import shutil
+import json
 from pprint import pprint
 from functools import wraps
 
 from vagrant import Vagrant
 
-from fabric.api import env, local, run, put, sudo, prompt, task
+from fabric.api import env, local, run, sudo, prompt, task
 
 
 env.AWS_BOX = 'https://github.com/mitchellh/vagrant-aws/raw/master/dummy.box'
@@ -21,7 +22,7 @@ env.SETTINGS_LOADED = False
 #state sensitive
 from .state import nodeCollection, instanceCollection, configCollection, \
     balancerCollection, appCollection
-from .utils import machine, gencode
+from .utils import machine, gencode, registry
 
 
 @task
@@ -121,23 +122,34 @@ def set_registry(uri):
 
 
 @configuredtask
-def export_image(imagename, *names):
+def install_local_registry():
+    print 'For better performance install the registry on the cluster (TODO)'
+    local('sudo docker pull samalba/docker-registry')
+    #TODO mount tmp directory for persistance
+    #-volumes-from=""
+    #-v /mnt/data_on_host:/var/lib/couchdb
+    local('sudo docker run -d -p 5000:5000 samalba/docker-registry')
+    set_registry('localhost:5000')
+
+
+@configuredtask
+def export_image(imagename):
     if env.DOCKER_REGISTRY:
-        local('sudo docker push %s --registry=%s' %
-            (imagename, env.DOCKER_REGISTRY))
+        info = {
+            'imagename': imagename,
+            'registry': env.DOCKER_REGISTRY,
+        }
+        local('sudo docker tag {imagename} {registry}/{imagename}'.format(**info))
+        local('sudo docker push {registry}/{imagename}'.format(**info))
         return
-    if not names:
-        names = [node.name for node in nodeCollection.all()]
-    local('sudo docker export %s > image.tar' % imagename)
-    for name in names:
-        with machine(name):
-            put('image.tar', '~/image.tar')
-            sudo('docker import ~/image.tar')
+    else:
+        assert False, 'Please install a docker registry'
+    return
 
 
 @configuredtask
 def run_image(imagename, name=None, ports='', memory=256, cpu=1, **envparams):
-    ports = ports.split('-')
+    ports = [port.strip() for port in ports.split('-') if port]
     memory = memory * (1024 ** 3)  # convert MB to Bytes
     if not name:
         for node in nodeCollection.all():
@@ -156,37 +168,40 @@ def run_image(imagename, name=None, ports='', memory=256, cpu=1, **envparams):
     args = args.strip()
 
     with machine(name):
-        result = sudo('docker run -d %s %s' % (args, imagename))
+        with registry():
+            fullname = '%s/%s' % (env.TUNNELED_DOCKER_REGISTRY, imagename)
+            sudo('docker pull %s' % fullname)
+            result = sudo('docker run -d %s %s' % (args, fullname))
 
-        container_id = result.strip().rsplit()[-1]
+            container_id = result.strip().rsplit()[-1]
 
-        paths = list()
-        hostname = env.VAGRANT.hostname(name)
+            paths = list()
+            hostname = env.VAGRANT.hostname(name)
 
-        if not ports:
-            result = sudo('docker inspect %s' % container_id)
-            #TODO
-            ports = [result.strip()]
+            if not ports:
+                result = sudo('docker inspect %s' % container_id)
+                response = json.loads(result.strip())
+                ports = response[0]['Config']['PortSpecs']
 
-        for port in ports:
-            uri = '%s:%s' % (hostname, port.split(':')[0])
-            paths.append(uri)
+            for port in ports:
+                uri = '%s:%s' % (hostname, port.split(':')[0])
+                paths.append(uri)
 
-        return _printobj(instanceCollection.create(
-            machine_name=name,
-            image_name=imagename,
-            memory=memory,
-            cpu=cpu,
-            container_id=container_id,
-            paths=paths,
-        ))
+            return _printobj(instanceCollection.create(
+                machine_name=name,
+                image_name=imagename,
+                memory=memory,
+                cpu=cpu,
+                container_id=container_id,
+                paths=paths,
+            ))
 
 
 @configuredtask
 def stop_instance(container_id):
     instance = instanceCollection.get(container_id=container_id)
     name = instance.machine_name
-    while machine(name):
+    with machine(name):
         sudo('docker stop %s' % container_id)
     instance.remove()
 
@@ -319,7 +334,7 @@ def build_base():
     for name in os.listdir(base_path):
         full_path = os.path.join(base_path, name)
         if not name.startswith('.') and os.path.isdir(full_path):
-            tag = 'sys/%s' % name
+            tag = 'system/%s' % name
             local('cd %s && sudo docker build -t="%s" .' % (full_path, tag))
 
 
@@ -329,14 +344,14 @@ def install_app_mgmt(compile_base=True):
     if compile_base:
         build_base()
 
-    export_image('sys/redis')
-    export_image('sys/hipache')
+    export_image('system/redis')
+    export_image('system/hipache')
 
-    redis_password = gencode()
-    redis = run_image('sys/redis', PASSWORD=redis_password)
+    redis_password = gencode(12)
+    redis = run_image('system/redis', PASSWORD=redis_password)
     redis_uri = 'redis://:%s@%s/0' % (redis_password, redis.paths[0])
 
-    hipache = run_image('sys/hipache', ports='80:80', REDIS_URI=redis_uri)
+    hipache = run_image('system/hipache', ports='80:80', REDIS_URI=redis_uri)
     hipache_uri = 'http://' + hipache.paths[0]
 
     return register_balancer(hipache_uri, redis_uri)

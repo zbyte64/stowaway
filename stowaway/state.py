@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import os
 import datetime
+import uuid
 
 from fabric.api import env
 
@@ -15,7 +16,7 @@ class Node(micromodels.Model):
     name = micromodels.CharField()
     hostname = micromodels.CharField()
     created = micromodels.DateTimeField(default=datetime.datetime.now)
-    memory_capacitiy = micromodels.IntegerField(required=False, help_text='In bytes')
+    memory_capacity = micromodels.IntegerField(required=False, help_text='In bytes')
     cpu_capacity = micromodels.IntegerField(required=False, help_text='CPU Shares')
 
     def get_instances(self):
@@ -40,11 +41,11 @@ class Node(micromodels.Model):
 
 
 class DockerInstance(micromodels.Model):
+    container_id = micromodels.CharField()
     machine_name = micromodels.CharField()
     image_name = micromodels.CharField()
     memory = micromodels.IntegerField(required=False, help_text='In bytes')
     cpu = micromodels.IntegerField(required=False, help_text='CPU Shares')
-    container_id = micromodels.CharField(required=False)
     paths = micromodels.FieldCollectionField(micromodels.CharField())
 
 
@@ -65,12 +66,21 @@ class Application(micromodels.Model):
     #environ = micromodels.PrimitiveField(default=dict)
 
 
+def id_maker():
+    return uuid.uuid4().hex
+
+
 #CONSIDER: make lazy
 datastore = JSONFileDataStore(path=os.path.join(env.WORK_DIR, 'db'))
 filestore = DirectoryFileStore(os.path.join(env.WORK_DIR, 'filestore'))
-nodeCollection = Collection(Node, data_store=datastore, file_store=filestore)
-instanceCollection = Collection(DockerInstance, data_store=datastore, file_store=filestore)
-configCollection = RawCollection(name='config', data_store=datastore, file_store=filestore)
-balancerCollection = Collection(Balancer, data_store=datastore, file_store=filestore)
-appCollection = Collection(Application, data_store=datastore, file_store=filestore)
+nodeCollection = Collection(Node, data_store=datastore, file_store=filestore,
+    object_id_field='name')
+instanceCollection = Collection(DockerInstance, data_store=datastore,
+    file_store=filestore, object_id_field='container_id')
+configCollection = RawCollection(name='config', data_store=datastore,
+    file_store=filestore)
+balancerCollection = Collection(Balancer, data_store=datastore,
+    file_store=filestore, object_id_field='name')
+appCollection = Collection(Application, data_store=datastore,
+    file_store=filestore, id_generator=id_maker)
 
