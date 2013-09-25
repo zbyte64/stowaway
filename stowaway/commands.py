@@ -215,6 +215,7 @@ def shut_it_down(*names):
         instances = instanceCollection.find(machine_name=name)
         for instance in instances:
             stop_instance(instance.container_id)
+    balancerCollection.all().delete()
 
 
 @configuredtask

@@ -28,7 +28,7 @@ class JSONFileDataStore(MemoryDataStore):
         name = kwargs['collection'].name
         cstore = self._get_cstore(kwargs['collection'])
         ret = super(JSONFileDataStore, self).execute_hooks(hook, kwargs)
-        if hook in ['afterSave', 'afterRemove']:
+        if hook in ['afterSave', 'afterRemove', 'afterDelete']:
             outpath = os.path.join(self.path, name + '.json')
             json_kwargs = dict()
             if self.prettify:
