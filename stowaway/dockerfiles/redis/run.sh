@@ -1,4 +1,6 @@
 #!/bin/bash
 
-redis-server -h 0.0.0.0 -p 6379 -a $PASSWORD
+echo "requirepass $PASSWORD" >> /etc/redis/redis.conf
+
+redis-server /etc/redis/redis.conf
 

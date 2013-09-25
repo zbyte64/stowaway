@@ -181,7 +181,8 @@ def run_image(imagename, name=None, ports='', memory=256, cpu=1, **envparams):
             if not ports:
                 result = sudo('docker inspect %s' % container_id)
                 response = json.loads(result.strip())
-                ports = response[0]['Config']['PortSpecs']
+                mapping = response[0]['NetworkSettings']['PortMapping']['Tcp']
+                ports = mapping.values()
 
             for port in ports:
                 uri = '%s:%s' % (hostname, port.split(':')[0])
@@ -211,7 +212,7 @@ def shut_it_down(*names):
     if not names:
         names = [node.name for node in nodeCollection.all()]
     for name in names:
-        instances = instanceCollection.filter(machine_name=name)
+        instances = instanceCollection.find(machine_name=name)
         for instance in instances:
             stop_instance(instance.container_id)
 
