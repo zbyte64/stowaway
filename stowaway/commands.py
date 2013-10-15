@@ -37,7 +37,7 @@ def embark(workingdir=None):
 
 
 def setupaws():
-    environ = dict()
+    environ = configCollection.get('environ') or dict()
     environ['PROVISIONER'] = 'aws'
     environ['BOX_NAME'] = 'awsbox'
 

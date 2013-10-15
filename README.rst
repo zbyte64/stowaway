@@ -26,28 +26,39 @@ Requirements
 Commands
 ========
 
-Getting started::
+Install::
 
     pip install stowaway
+
+
+Create a new cluster::
+
+    #create a directory to hold your cluster's state and config
     mkdir mydockercluster && cd mydockercluster
+    
+    #installs a local docker registry
+    stowaway install_local_registry
+    
+    #will ask configuration questions
     stowaway embark
 
-    #returns node name
+    #provision a node
     stowaway provision
 
-    #returns port listing and a container id
-    stowaway run_image:samalba/hipache
-    stowaway stop_instance:container_id
 
-    #deploy local image
+Upload and run a docker image::
+
     stowaway export_image:mylocalimage
     stowaway run_image:mylocalimage
 
 
-    #status inspection
+See what makes up your cluster::
+
     stowaway list_instances
     stowaway list_nodes
 
+
+Install and configure application management::
 
     #for cluster creation
     stowaway install_app_mgmt
@@ -57,8 +68,11 @@ Getting started::
     stowaway export_image:sys/redis
     stowaway export_image:sys/hipache
     stowaway run_image:sys/redis,PASSWORD=r4nd0m
-    stowaway run_image:sys/hipache,ports=80:80,REDIS_URI=<redis uri with pass>
+    stowaway run_image:sys/hipache,ports=80:80,REDIS_URI=redis://:r4nd0m@ip/0
     stowaway register_balancer:<hipache path>,<redis uri>[,<name>]
+
+
+Adding and managing apps in the cluster::
 
     #now add apps and manage them
     stowaway export_image:<app image>
