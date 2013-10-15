@@ -33,7 +33,7 @@ setup(
         "fabric",
         "python-vagrant",
         "PySO8601",
-        "micromodels",
+        "micromodels-ng==0.6.3",
         "microcollections",
     ],
     tests_require=["nose"],
