@@ -7,7 +7,6 @@ from fabric.api import env
 
 import micromodels
 from microcollections.collections import Collection, RawCollection
-from microcollections.filestores import DirectoryFileStore
 
 from .datastores import JSONFileDataStore
 
@@ -72,15 +71,13 @@ def id_maker():
 
 #CONSIDER: make lazy
 datastore = JSONFileDataStore(path=os.path.join(env.WORK_DIR, 'db'))
-filestore = DirectoryFileStore(os.path.join(env.WORK_DIR, 'filestore'))
-nodeCollection = Collection(Node, data_store=datastore, file_store=filestore,
-    object_id_field='name')
+#filestore = DirectoryFileStore(os.path.join(env.WORK_DIR, 'filestore'))
+nodeCollection = Collection(Node, data_store=datastore, object_id_field='name')
 instanceCollection = Collection(DockerInstance, data_store=datastore,
-    file_store=filestore, object_id_field='container_id')
-configCollection = RawCollection(name='config', data_store=datastore,
-    file_store=filestore)
+    object_id_field='container_id')
+configCollection = RawCollection(name='config', data_store=datastore)
 balancerCollection = Collection(Balancer, data_store=datastore,
-    file_store=filestore, object_id_field='name')
+    object_id_field='name')
 appCollection = Collection(Application, data_store=datastore,
-    file_store=filestore, id_generator=id_maker)
+    id_generator=id_maker)
 

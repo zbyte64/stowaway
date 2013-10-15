@@ -26,12 +26,12 @@ from .utils import machine, gencode, registry
 
 
 @task
-def setup(workingdir=None):
+def embark(workingdir=None):
     if not os.path.exists(os.path.join(env.WORK_DIR, 'Vagrantfile')):
         shutil.copy(os.path.join(env.TOOL_ROOT, 'Vagrantfile'),
                     env.WORK_DIR)
     env.VAGRANT = Vagrant(env.WORK_DIR)
-    #provisioner = prompt('What provision to use? (aws|...)')
+    provisioner = prompt('What vessel shall to use? (aws|[todo])')
     provisioner = 'aws'
     return env.PROVISION_SETUPS[provisioner]()
 
