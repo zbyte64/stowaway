@@ -20,7 +20,7 @@ Requirements
 * fabric
 * python-vagrant
 * micromodels
-* micromodels-collections
+* microcollections
 
 
 Commands

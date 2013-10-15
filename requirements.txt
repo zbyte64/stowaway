@@ -1,4 +1,4 @@
 fabric
 python-vagrant
 micromodels
-git+git://github.com/zbyte64/micromodels-collections.git#egg=micromodels-collections
+microcollections
