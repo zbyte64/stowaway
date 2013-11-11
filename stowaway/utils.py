@@ -7,6 +7,21 @@ from fabric.api import env, settings
 from fabric.context_managers import remote_tunnel
 
 
+boolean = lambda x: str(x).lower() in ['true', '1']
+
+
+class patch_environ(object):
+    def __init__(self, params=None, **kwargs):
+        self.params = params or kwargs
+
+    def __enter__(self):
+        self.old_environ = os.environ.copy()
+        os.environ.update(self.params)
+
+    def __exit__(self, *args):
+        os.environ = self.old_environ
+
+
 class machine(object):
     def __init__(self, name):
         self.name = name
@@ -17,15 +32,18 @@ class machine(object):
             key_filename=env.VAGRANT.keyfile(vm_name=self.name),
             disable_known_hosts=True)
 
+    def make_environ_patch(self):
+        self.environ_patch = patch_environ(VM_NAME=self.name)
+
     def __enter__(self):
-        self.old_vm_name = os.environ.get('VM_NAME', '')
-        os.environ['VM_NAME'] = self.name
         self.make_settings_patch()
         self.settings_patch.__enter__()
+        self.make_environ_patch()
+        self.environ_patch.__enter__()
 
     def __exit__(self, *args):
         self.settings_patch.__exit__(*args)
-        os.environ['VM_NAME'] = self.old_vm_name
+        self.environ_patch.__exit__(*args)
 
 
 class registry(object):

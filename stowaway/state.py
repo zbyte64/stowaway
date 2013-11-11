@@ -6,6 +6,8 @@ import uuid
 from fabric.api import env
 
 import micromodels
+from micromodels.fields import JSONField
+micromodels.JSONField = JSONField
 from microcollections.collections import Collection, RawCollection
 
 from .datastores import JSONFileDataStore
@@ -62,7 +64,15 @@ class Application(micromodels.Model):
     name = micromodels.CharField()
     image_name = micromodels.CharField()
     balancer_name = micromodels.CharField()
-    #environ = micromodels.PrimitiveField(default=dict)
+    environ = micromodels.JSONField()
+
+
+class BoxConfiguration(micromodels.Model):
+    label = micromodels.CharField()
+    memory = micromodels.IntegerField(required=False, help_text='In bytes')
+    cpu = micromodels.IntegerField(required=False, help_text='CPU Shares')
+    params = micromodels.JSONField()
+    default = micromodels.BooleanField(default=False, required=False)
 
 
 def id_maker():
@@ -80,4 +90,5 @@ balancerCollection = Collection(Balancer, data_store=datastore,
     object_id_field='name')
 appCollection = Collection(Application, data_store=datastore,
     id_generator=id_maker)
-
+boxCollection = Collection(BoxConfiguration, data_store=datastore,
+    id_generator=id_maker)

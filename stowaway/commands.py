@@ -2,6 +2,7 @@
 import os
 import shutil
 import json
+import code
 from pprint import pprint
 from functools import wraps
 
@@ -10,6 +11,8 @@ from vagrant import Vagrant
 from fabric.api import env, local, run, sudo, prompt, task
 
 
+GB = 1024 ** 3
+MB = 1024 ** 2
 env.AWS_BOX = 'https://github.com/mitchellh/vagrant-aws/raw/master/dummy.box'
 env.PROVISIONER = None
 env.DOCKER_REGISTRY = None
@@ -21,8 +24,8 @@ env.SETTINGS_LOADED = False
 
 #state sensitive
 from .state import nodeCollection, instanceCollection, configCollection, \
-    balancerCollection, appCollection
-from .utils import machine, gencode, registry
+    balancerCollection, appCollection, boxCollection
+from .utils import machine, gencode, registry, patch_environ, boolean
 
 
 @task
@@ -41,18 +44,35 @@ def setupaws():
     environ['PROVISIONER'] = 'aws'
     environ['BOX_NAME'] = 'awsbox'
 
-    #ports 23 and 80 are required
-    environ['AWS_SECURITY_GROUPS'] = prompt('Enter AWS security group', default='dockcluster')
-    environ['AWS_AMI'] = prompt('Enter AWS AMI', default='ami-e1357b88')
-    environ['AWS_MACHINE'] = prompt('Enter AWS Machine Size', default='m1.small')
+
     environ['AWS_ACCESS_KEY_ID'] = prompt('Enter your AWS Access Key ID')
     environ['AWS_SECRET_ACCESS_KEY'] = prompt('Enter your AWS Secret Access Key')
+
+    #ports 23 and 80 are required
+    environ['AWS_SECURITY_GROUPS'] = prompt('Enter AWS security group', default='dockcluster')
+    environ['AWS_REGION'] = prompt('Enter AWS region', default='us-east-1')
+    #TODO prompt ami based on region
+    environ['AWS_AMI'] = prompt('Enter AWS AMI', default='ami-e1357b88')
+    #environ['AWS_MACHINE'] = prompt('Enter AWS Machine Size', default='m1.small')
     environ['AWS_KEYPAIR_NAME'] = prompt('Enter your AWS Key pair name')
     default_pem_path = os.path.join(os.path.expanduser('~/.ssh'), environ['AWS_KEYPAIR_NAME'] + '.pem')
     environ['AWS_SSH_PRIVKEY'] = prompt('Enter your AWS SSH private key path', default=default_pem_path)
     configCollection['environ'] = environ
 
     load_settings()
+
+    boxCollection.create(label='small', cpu=1, memory=int(1.7 * GB), params={
+        'AWS_AMI': environ['AWS_AMI'],
+        'AWS_MACHINE': 'm1.small',
+    },)
+    boxCollection.create(label='medium', cpu=2, memory=int(3.75 * GB), params={
+        'AWS_AMI': environ['AWS_AMI'],
+        'AWS_MACHINE': 'm1.medium',
+    }, default=True)
+    boxCollection.create(label='large', cpu=4, memory=int(7.5 * GB), params={
+        'AWS_AMI': environ['AWS_AMI'],
+        'AWS_MACHINE': 'm1.large',
+    },)
 
     env.VAGRANT.box_add('awsbox', env.AWS_BOX, provider='aws', force=True)
 
@@ -86,16 +106,21 @@ def _printobj(obj):
 
 
 @configuredtask
-def provision(name=None):
+def provision(name=None, boxname=None):
     if name is None:
         name = gencode(12)
-    os.environ['VM_NAME'] = name  # normally handled by machine
-    env.VAGRANT.up(vm_name=name, provider=env.PROVISIONER)
+    if boxname is None:
+        box = boxCollection.first(default=True)
+        if not box:
+            assert False, 'Please set a default box configuration'
+    else:
+        box = boxCollection.find(label=boxname)
+    with patch_environ(VM_NAME=name, **box.params):
+        env.VAGRANT.up(vm_name=name, provider=env.PROVISIONER)
 
-    #TODO support box settings, ie box1 = m1.medium, us-east1
-    cpu = env.get('CPU_CAPACITY')
+    cpu = env.get('CPU_CAPACITY', box.cpu)
     cpu = int(cpu) if cpu else None
-    memory = env.get('MEMORY_CAPACITY')
+    memory = env.get('MEMORY_CAPACITY', box.memory)
     memory = int(memory) if memory else None
 
     return _printobj(nodeCollection.create(
@@ -108,8 +133,8 @@ def provision(name=None):
 
 @configuredtask
 def remove_node(name):
-    os.environ['VM_NAME'] = name  # normally handled by machine:
-    env.VAGRANT.destroy(vm_name=name)
+    with patch_environ(VM_NAME=name):
+        env.VAGRANT.destroy(vm_name=name)
     nodeCollection.get(name=name).remove()
 
 
@@ -124,11 +149,11 @@ def set_registry(uri):
 @configuredtask
 def install_local_registry():
     print 'For better performance install the registry on the cluster (TODO)'
+    path = prompt('Enter a directory path to store docker images', default='/tmp/docker-registry')
+    if not os.path.exists(path):
+        local('sudo mkdir %s' % path)
     local('sudo docker pull samalba/docker-registry')
-    #TODO mount tmp directory for persistance
-    #-volumes-from=""
-    #-v /mnt/data_on_host:/var/lib/couchdb
-    local('sudo docker run -d -p 5000:5000 samalba/docker-registry')
+    local('sudo docker run -d -p 5000:5000 -v {path}:/tmp/registry samalba/docker-registry'.format(path=path))
     set_registry('localhost:5000')
 
 
@@ -148,14 +173,19 @@ def export_image(imagename):
 
 
 @configuredtask
-def run_image(imagename, name=None, ports='', memory=256, cpu=1, **envparams):
+def run_image(imagename, name=None, ports='', memory=256, cpu=1, hard_cpu=True,
+        **envparams):
+    hard_cpu = boolean(hard_cpu)
     ports = [port.strip() for port in ports.split('-') if port]
-    memory = memory * (1024 ** 3)  # convert MB to Bytes
+    memory = memory * MB  # convert MB to Bytes
     if not name:
         for node in nodeCollection.all():
-            if node.can_fit(memory=memory, cpu=cpu):
+            if node.can_fit(memory=memory, cpu=hard_cpu and cpu or 0):
                 name = node.name
                 break
+    if not name:
+        node = provision()
+        name = node.name
     assert name, 'Please provision a new node to make room'
 
     e_args = ' '.join(['-e %s=%s' % (key, value)
@@ -324,8 +354,8 @@ def list_apps():
 @configuredtask
 def vagrant(cmd='', name=None):
     if name:
-        os.environ['VM_NAME'] = name
-        local('vagrant %s' % cmd)
+        with patch_environ(VM_NAME=name):
+            local('vagrant %s' % cmd)
     else:
         local('vagrant %s' % cmd)
 
@@ -342,18 +372,34 @@ def build_base():
 
 @configuredtask
 def install_app_mgmt(compile_base=True):
-    compile_base = str(compile_base).lower() in ['true', '1']
+    compile_base = boolean(compile_base)
     if compile_base:
         build_base()
 
     export_image('system/redis')
     export_image('system/hipache')
 
+    #TODO We don't need 2 whole cpu units, but at least one should be guaranteed
     redis_password = gencode(12)
-    redis = run_image('system/redis', PASSWORD=redis_password)
+    redis = run_image('system/redis', hard_cpu=False,
+        PASSWORD=redis_password)
     redis_uri = 'redis://:%s@%s/0' % (redis_password, redis.paths[0])
 
-    hipache = run_image('system/hipache', ports='80:80', REDIS_URI=redis_uri)
+    hipache = run_image('system/hipache', ports='80:80', hard_cpu=False,
+        REDIS_URI=redis_uri)
     hipache_uri = 'http://' + hipache.paths[0]
 
     return register_balancer(hipache_uri, redis_uri)
+
+
+@configuredtask
+def dbshell():
+    variables = {
+        'nodes': nodeCollection,
+        'instances': instanceCollection,
+        'configs': configCollection,
+        'balancers': balancerCollection,
+        'apps': appCollection,
+        'boxes': boxCollection,
+    }
+    code.interact(local=variables)

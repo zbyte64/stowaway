@@ -34,7 +34,7 @@ setup(
         "python-vagrant",
         "PySO8601",
         "micromodels-ng==0.6.3",
-        "microcollections",
+        "microcollections==0.0.5",
     ],
     tests_require=["nose"],
     test_suite = 'nose.collector',
