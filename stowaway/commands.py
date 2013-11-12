@@ -8,7 +8,7 @@ from functools import wraps
 
 from vagrant import Vagrant
 
-from fabric.api import env, local, run, sudo, prompt, task
+from fabric.api import env, local, run, sudo, prompt, task, cd
 
 
 env.PROVISIONER = None
@@ -94,6 +94,9 @@ def provision(name=None, boxname=None):
         #env.VAGRANT._run_vagrant_command = anon
         env.VAGRANT.up(vm_name=name, provider=env.PROVISIONER)
 
+    with machine(name):
+        privatename = run('echo $HOSTNAME', capture=True).strip()
+
     cpu = env.get('CPU_CAPACITY', box.cpu)
     cpu = int(cpu) if cpu else None
     memory = env.get('MEMORY_CAPACITY', box.memory)
@@ -104,6 +107,7 @@ def provision(name=None, boxname=None):
         hostname=env.VAGRANT.hostname(name),
         cpu_capacity=cpu,
         memory_capacity=memory,
+        privatename=privatename,
     ))
 
 
@@ -188,16 +192,20 @@ def run_image(imagename, name=None, ports='', memory=256, cpu=1,
             paths = list()
             hostname = node.privatename or env.VAGRANT.hostname(name)
 
-            if not ports:
-                result = sudo('docker inspect %s' % container_id)
-                response = json.loads(result.strip())
-                instance = response[0]
-                if instance['Config']['ExposedPorts']:
-                    ports = [port.split('/')[0]
-                        for port in instance['Config']['ExposedPorts'].keys()]
-                if instance['NetworkSettings']['PortMapping']:
-                    mapping = instance['NetworkSettings']['PortMapping']['Tcp']
-                    ports = mapping.values()
+            #grab ports
+            result = sudo('docker inspect %s' % container_id)
+            response = json.loads(result.strip())
+            instance = response[0]
+            print instance
+            #if instance['Config']['ExposedPorts']:
+            #    ports = [port.split('/')[0]
+            #        for port in instance['Config']['ExposedPorts'].keys()]
+            if instance['NetworkSettings']['Ports']:
+                ports = list()
+                for inner, outer in instance['NetworkSettings']['Ports'].items():
+                    if not outer:
+                        continue
+                    ports.append(outer[0]['HostPort'])
 
             for port in ports:
                 uri = '%s:%s' % (hostname, port.split(':')[0])
@@ -279,9 +287,11 @@ def app_scale(name, num=1, process=None):
     balancer = balancerCollection.get(name=app.balancer_name)
     if num > 0:
         for i in range(num):
-            instance = run_image(app.image_name, **(app.environ or {}))
+            #TODO assuming port 8000 is bad
+            instance = run_image(app.image_name, ports='8000',
+                **(app.environ or {}))
             redis_cli(balancer.redis_uri, 'rpush',
-                      'frontend:%s' % name, instance.paths[0])
+                      'frontend:%s' % name, 'http://'% instance.paths[0])
     elif num < 0:
         instances = iter(instanceCollection.find(image_name=app.image_name))
         for i in range(abs(num)):
@@ -301,12 +311,17 @@ def app_remove_domain(name, domain):
     app = appCollection.get(name=name)
     balancer = balancerCollection.get(name=app.balancer_name)
     #TODO lookup redis docs
-    redis_cli(balancer.redis_uri, 'rpop', 'frontend:%s' % domain, name)
+    redis_cli(balancer.redis_uri, 'rpop', 'frontend:%s' % domain)#, name)
 
 
 def redis_cli(uri, *args):
-    #TODO
-    return run('python redis_cli.py ' + uri + ' ' + ' '.join(["%s" % arg for arg in args]))
+    #TODO which machine?
+    instance = instanceCollection.first()
+    name = instance.machine_name
+    with machine(name):
+        with cd('/vagrant'):
+            arg = ' '.join(["%s" % arg for arg in args])
+            return run('python redis_cli.py %s %s' % (uri, arg))
 
 
 def list_collection(col):
@@ -369,7 +384,7 @@ def install_app_mgmt(compile_base=True):
 
     #TODO We don't need 2 whole cpu units, but at least one should be guaranteed
     redis_password = gencode(12)
-    redis = run_image('system/redis', PASSWORD=redis_password)
+    redis = run_image('system/redis', ports='6379', PASSWORD=redis_password)
     redis_uri = 'redis://:%s@%s/0' % (redis_password, redis.paths[0])
 
     hipache = run_image('system/hipache', ports='80:80', REDIS_URI=redis_uri)
