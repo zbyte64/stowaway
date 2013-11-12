@@ -13,7 +13,7 @@ from fabric.api import env, local, run, sudo, prompt, task
 
 env.PROVISIONER = None
 env.DOCKER_REGISTRY = None
-env.TOOL_ROOT = os.path.split(os.path.split(os.path.abspath(__file__))[0])[0]
+env.TOOL_ROOT = os.path.join(os.path.split(os.path.abspath(__file__))[0], 'assets')
 env.WORK_DIR = os.getcwd()
 env.PROVISION_SETUPS = dict()
 env.VAGRANT = None
@@ -29,6 +29,9 @@ from .utils import machine, gencode, registry, patch_environ, boolean, MB
 def embark(workingdir=None):
     if not os.path.exists(os.path.join(env.WORK_DIR, 'Vagrantfile')):
         shutil.copy(os.path.join(env.TOOL_ROOT, 'Vagrantfile'),
+                    env.WORK_DIR)
+    if not os.path.exists(os.path.join(env.WORK_DIR, 'redis_cli.py')):
+        shutil.copy(os.path.join(env.TOOL_ROOT, 'redis_cli.py'),
                     env.WORK_DIR)
     env.VAGRANT = Vagrant(env.WORK_DIR)
     options = env.PROVISION_SETUPS.keys()
@@ -117,7 +120,7 @@ def install_local_registry():
 
 
 @configuredtask
-def export_image(imagename):
+def upload_image(imagename):
     if env.DOCKER_REGISTRY:
         info = {
             'imagename': imagename,
@@ -143,6 +146,7 @@ def run_image(imagename, name=None, ports='', memory=256, cpu=1, hard_cpu=True,
                 name = node.name
                 break
     if not name:
+        print 'Not enough space in the cluster, allocating a node'
         node = provision()
         name = node.name
     assert name, 'Please provision a new node to make room'
@@ -208,18 +212,21 @@ def shut_it_down(*names):
 
 
 @configuredtask
-def register_balancer(endpoint, redis, name=None):
+def register_balancer(endpoint, redis, name=None, default=False):
     if name is None:
         name = gencode(12)
     return _printobj(balancerCollection.create(
         name=name,
         endpoint_uri=endpoint,
-        redis_uri=redis
+        redis_uri=redis,
+        default=default,
     ))
 
 
 @configuredtask
-def add_app(name, imagename, balancername):
+def add_app(name, imagename, balancername=None):
+    if not balancername:
+        balancername = balancerCollection.first(default=True).name
     return _printobj(appCollection.create(
         name=name,
         image_name=imagename,
@@ -334,9 +341,8 @@ def install_app_mgmt(compile_base=True):
     compile_base = boolean(compile_base)
     if compile_base:
         build_base()
-
-    export_image('system/redis')
-    export_image('system/hipache')
+        upload_image('system/redis')
+        upload_image('system/hipache')
 
     #TODO We don't need 2 whole cpu units, but at least one should be guaranteed
     redis_password = gencode(12)
@@ -348,7 +354,7 @@ def install_app_mgmt(compile_base=True):
         REDIS_URI=redis_uri)
     hipache_uri = 'http://' + hipache.paths[0]
 
-    return register_balancer(hipache_uri, redis_uri)
+    return register_balancer(hipache_uri, redis_uri, default=True)
 
 
 @configuredtask

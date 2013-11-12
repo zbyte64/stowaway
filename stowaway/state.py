@@ -58,6 +58,7 @@ class Balancer(micromodels.Model):
     name = micromodels.CharField()
     endpoint_uri = micromodels.CharField()
     redis_uri = micromodels.CharField()
+    default = micromodels.BooleanField(default=False, required=False)
 
 
 class Application(micromodels.Model):

@@ -42,14 +42,31 @@ Create a new cluster::
     #will ask configuration questions
     stowaway embark
 
-    #provision a node
-    stowaway provision
+    #allows for multi-node web app scaling
+    stowaway install_app_mgmt
+    
 
+Adding and managing apps in the cluster::
+
+    #in some directory: docker build -t myapp .
+    #upload the image and register the app
+    stowaway upload_image:<app image>
+    stowaway add_app:<name>,<app image>
+    #configure app environ
+    stowaway app_config:<name>,KEY1=VALUE1,KEY2=VALUE2
+    stowaway app_remove_config:<name>,KEY1,KEY2
+    #num=-1 to descale
+    stowaway app_scale:<name>[,<num=1>,<process>]
+    stowaway app_add_domain:<name>,<domain>
+
+
+More Commands
+=============
 
 Upload and run a docker image::
 
-    stowaway export_image:mylocalimage
-    stowaway run_image:mylocalimage
+    stowaway upload_image:myapplication
+    stowaway run_image:myapplication
 
 
 See what makes up your cluster::
@@ -65,22 +82,12 @@ Install and configure application management::
     
     #or do it manually:
     stowaway build_base
-    stowaway export_image:sys/redis
-    stowaway export_image:sys/hipache
+    stowaway upload_image:sys/redis
+    stowaway upload_image:sys/hipache
     stowaway run_image:sys/redis,PASSWORD=r4nd0m
     stowaway run_image:sys/hipache,ports=80:80,REDIS_URI=redis://:r4nd0m@ip/0
     stowaway register_balancer:<hipache path>,<redis uri>[,<name>]
 
 
-Adding and managing apps in the cluster::
 
-    #now add apps and manage them
-    stowaway export_image:<app image>
-    stowaway add_app:<name>,<app image>,<balancer>
-    #configure app environ
-    stowaway app_config:KEY1=VALUE1,KEY2=VALUE2
-    stowaway app_remove_config:KEY1,KEY2
-    #num=-1 to descale
-    stowaway app_scale:<name>[,<num=1>,<process>]
-    stowaway app_add_domain:<name>,<domain>
 

@@ -1,3 +1,2 @@
 recursive-include stowaway/dockerfiles *
-include Vagrantfile
-include redis_cli.py
+recursive-include stowaway/assets *

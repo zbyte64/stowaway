@@ -25,6 +25,7 @@ setup(
     version=get_version(),
     scripts=['scripts/stowaway'],
     packages=find_packages(),
+    include_package_data = True,
     url='https://github.com/zbyte64/stowaway/',
     author='Jason Kraus',
     author_email='zbyte64@gmail.com',
