@@ -35,6 +35,7 @@ setup(
         "PySO8601",
         "micromodels-ng==0.6.3",
         "microcollections==0.0.5",
+        "pyyaml",
     ],
     tests_require=["nose"],
     test_suite = 'nose.collector',

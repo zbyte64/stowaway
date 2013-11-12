@@ -11,9 +11,6 @@ from vagrant import Vagrant
 from fabric.api import env, local, run, sudo, prompt, task
 
 
-GB = 1024 ** 3
-MB = 1024 ** 2
-env.AWS_BOX = 'https://github.com/mitchellh/vagrant-aws/raw/master/dummy.box'
 env.PROVISIONER = None
 env.DOCKER_REGISTRY = None
 env.TOOL_ROOT = os.path.split(os.path.split(os.path.abspath(__file__))[0])[0]
@@ -25,7 +22,7 @@ env.SETTINGS_LOADED = False
 #state sensitive
 from .state import nodeCollection, instanceCollection, configCollection, \
     balancerCollection, appCollection, boxCollection
-from .utils import machine, gencode, registry, patch_environ, boolean
+from .utils import machine, gencode, registry, patch_environ, boolean, MB
 
 
 @task
@@ -34,49 +31,11 @@ def embark(workingdir=None):
         shutil.copy(os.path.join(env.TOOL_ROOT, 'Vagrantfile'),
                     env.WORK_DIR)
     env.VAGRANT = Vagrant(env.WORK_DIR)
-    provisioner = prompt('What vessel shall to use? (aws|[todo])')
+    options = env.PROVISION_SETUPS.keys()
+    provisioner = prompt('What vessel shall to use? (%s)' % ', '.join(options),
+        default='aws')
     provisioner = 'aws'
     return env.PROVISION_SETUPS[provisioner]()
-
-
-def setupaws():
-    environ = configCollection.get('environ') or dict()
-    environ['PROVISIONER'] = 'aws'
-    environ['BOX_NAME'] = 'awsbox'
-
-
-    environ['AWS_ACCESS_KEY_ID'] = prompt('Enter your AWS Access Key ID')
-    environ['AWS_SECRET_ACCESS_KEY'] = prompt('Enter your AWS Secret Access Key')
-
-    #ports 23 and 80 are required
-    environ['AWS_SECURITY_GROUPS'] = prompt('Enter AWS security group', default='dockcluster')
-    environ['AWS_REGION'] = prompt('Enter AWS region', default='us-east-1')
-    #TODO prompt ami based on region
-    environ['AWS_AMI'] = prompt('Enter AWS AMI', default='ami-e1357b88')
-    #environ['AWS_MACHINE'] = prompt('Enter AWS Machine Size', default='m1.small')
-    environ['AWS_KEYPAIR_NAME'] = prompt('Enter your AWS Key pair name')
-    default_pem_path = os.path.join(os.path.expanduser('~/.ssh'), environ['AWS_KEYPAIR_NAME'] + '.pem')
-    environ['AWS_SSH_PRIVKEY'] = prompt('Enter your AWS SSH private key path', default=default_pem_path)
-    configCollection['environ'] = environ
-
-    load_settings()
-
-    boxCollection.create(label='small', cpu=1, memory=int(1.7 * GB), params={
-        'AWS_AMI': environ['AWS_AMI'],
-        'AWS_MACHINE': 'm1.small',
-    },)
-    boxCollection.create(label='medium', cpu=2, memory=int(3.75 * GB), params={
-        'AWS_AMI': environ['AWS_AMI'],
-        'AWS_MACHINE': 'm1.medium',
-    }, default=True)
-    boxCollection.create(label='large', cpu=4, memory=int(7.5 * GB), params={
-        'AWS_AMI': environ['AWS_AMI'],
-        'AWS_MACHINE': 'm1.large',
-    },)
-
-    env.VAGRANT.box_add('awsbox', env.AWS_BOX, provider='aws', force=True)
-
-env.PROVISION_SETUPS['aws'] = setupaws
 
 
 def load_settings():
@@ -403,3 +362,7 @@ def dbshell():
         'boxes': boxCollection,
     }
     code.interact(local=variables)
+
+
+#TODO cleanup import chain
+from . import provisioners

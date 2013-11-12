@@ -7,6 +7,9 @@ from fabric.api import env, settings
 from fabric.context_managers import remote_tunnel
 
 
+GB = 1024 ** 3
+MB = 1024 ** 2
+
 boolean = lambda x: str(x).lower() in ['true', '1']
 
 
