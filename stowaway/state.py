@@ -67,14 +67,14 @@ class Application(micromodels.Model):
     name = micromodels.CharField()
     image_name = micromodels.CharField()
     balancer_name = micromodels.CharField()
-    environ = micromodels.JSONField()
+    environ = micromodels.JSONField(default=dict)
 
 
 class BoxConfiguration(micromodels.Model):
     label = micromodels.CharField()
     memory = micromodels.IntegerField(required=False, help_text='In bytes')
     cpu = micromodels.IntegerField(required=False, help_text='CPU Shares')
-    params = micromodels.JSONField()
+    params = micromodels.JSONField(default=dict)
     default = micromodels.BooleanField(default=False, required=False)
 
 

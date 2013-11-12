@@ -279,7 +279,7 @@ def app_scale(name, num=1, process=None):
     balancer = balancerCollection.get(name=app.balancer_name)
     if num > 0:
         for i in range(num):
-            instance = run_image(app.image_name, **app.environ)
+            instance = run_image(app.image_name, **(app.environ or {}))
             redis_cli(balancer.redis_uri, 'rpush',
                       'frontend:%s' % name, instance.paths[0])
     elif num < 0:
