@@ -153,9 +153,13 @@ def run_image(imagename, name=None, ports='', memory=256, cpu=1,
         **envparams):
     ports = [port.strip() for port in ports.split('-') if port]
     memory = memory * MB  # convert MB to Bytes
-    if not name:
+    node = None
+    if name:
+        node = nodeCollection.get(name=name)
+    else:
         for node in nodeCollection.all():
             if node.can_fit(memory=memory, cpu=cpu):
+                print 'Selected node:', node
                 name = node.name
                 break
     if not name:
@@ -182,13 +186,18 @@ def run_image(imagename, name=None, ports='', memory=256, cpu=1,
             container_id = result.strip().rsplit()[-1]
 
             paths = list()
-            hostname = env.VAGRANT.hostname(name)
+            hostname = node.privatename or env.VAGRANT.hostname(name)
 
             if not ports:
                 result = sudo('docker inspect %s' % container_id)
                 response = json.loads(result.strip())
-                mapping = response[0]['NetworkSettings']['PortMapping']['Tcp']
-                ports = mapping.values()
+                instance = response[0]
+                if instance['Config']['ExposedPorts']:
+                    ports = [port.split('/')[0]
+                        for port in instance['Config']['ExposedPorts'].keys()]
+                if instance['NetworkSettings']['PortMapping']:
+                    mapping = instance['NetworkSettings']['PortMapping']['Tcp']
+                    ports = mapping.values()
 
             for port in ports:
                 uri = '%s:%s' % (hostname, port.split(':')[0])
@@ -354,8 +363,9 @@ def install_app_mgmt(compile_base=True):
     compile_base = boolean(compile_base)
     if compile_base:
         build_base()
-        upload_image('system/redis')
-        upload_image('system/hipache')
+
+    upload_image('system/redis')
+    upload_image('system/hipache')
 
     #TODO We don't need 2 whole cpu units, but at least one should be guaranteed
     redis_password = gencode(12)

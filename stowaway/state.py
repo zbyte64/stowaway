@@ -16,6 +16,7 @@ from .datastores import JSONFileDataStore
 class Node(micromodels.Model):
     name = micromodels.CharField()
     hostname = micromodels.CharField()
+    privatename = micromodels.CharField(required=False)
     created = micromodels.DateTimeField(default=datetime.datetime.now)
     memory_capacity = micromodels.IntegerField(required=False, help_text='In bytes')
     cpu_capacity = micromodels.IntegerField(required=False, help_text='CPU Shares')
