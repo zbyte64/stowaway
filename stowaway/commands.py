@@ -13,7 +13,8 @@ from fabric.api import env, local, run, sudo, prompt, task
 
 env.PROVISIONER = None
 env.DOCKER_REGISTRY = None
-env.TOOL_ROOT = os.path.join(os.path.split(os.path.abspath(__file__))[0], 'assets')
+env.TOOL_ROOT = os.path.split(os.path.abspath(__file__))[0]
+env.ASSET_DIR = os.path.join(env.TOOL_ROOT, 'assets')
 env.WORK_DIR = os.getcwd()
 env.PROVISION_SETUPS = dict()
 env.VAGRANT = None
@@ -26,14 +27,19 @@ from .utils import machine, gencode, registry, patch_environ, boolean, MB
 
 
 @task
-def embark(workingdir=None):
+def init_vagrant():
     if not os.path.exists(os.path.join(env.WORK_DIR, 'Vagrantfile')):
-        shutil.copy(os.path.join(env.TOOL_ROOT, 'Vagrantfile'),
+        shutil.copy(os.path.join(env.ASSET_DIR, 'Vagrantfile'),
                     env.WORK_DIR)
     if not os.path.exists(os.path.join(env.WORK_DIR, 'redis_cli.py')):
-        shutil.copy(os.path.join(env.TOOL_ROOT, 'redis_cli.py'),
+        shutil.copy(os.path.join(env.ASSET_DIR, 'redis_cli.py'),
                     env.WORK_DIR)
     env.VAGRANT = Vagrant(env.WORK_DIR)
+
+
+@task
+def embark():
+    init_vagrant()
     options = env.PROVISION_SETUPS.keys()
     provisioner = prompt('What vessel shall to use? (%s)' % ', '.join(options),
         default='aws')
@@ -77,7 +83,15 @@ def provision(name=None, boxname=None):
             assert False, 'Please set a default box configuration'
     else:
         box = boxCollection.find(label=boxname)
+
     with patch_environ(VM_NAME=name, **box.params):
+        #TODO make this debug not break functionality
+        #from vagrant import VAGRANT_EXE
+        #import subprocess
+        #def anon(*args):
+            #command = [VAGRANT_EXE] + [arg for arg in args if arg is not None]
+            #return subprocess.check_call(command, cwd=env.VAGRANT.root)
+        #env.VAGRANT._run_vagrant_command = anon
         env.VAGRANT.up(vm_name=name, provider=env.PROVISIONER)
 
     cpu = env.get('CPU_CAPACITY', box.cpu)
@@ -135,14 +149,13 @@ def upload_image(imagename):
 
 
 @configuredtask
-def run_image(imagename, name=None, ports='', memory=256, cpu=1, hard_cpu=True,
+def run_image(imagename, name=None, ports='', memory=256, cpu=1,
         **envparams):
-    hard_cpu = boolean(hard_cpu)
     ports = [port.strip() for port in ports.split('-') if port]
     memory = memory * MB  # convert MB to Bytes
     if not name:
         for node in nodeCollection.all():
-            if node.can_fit(memory=memory, cpu=hard_cpu and cpu or 0):
+            if node.can_fit(memory=memory, cpu=cpu):
                 name = node.name
                 break
     if not name:
@@ -328,7 +341,7 @@ def vagrant(cmd='', name=None):
 
 @task
 def build_base():
-    base_path = os.path.join(env.TOOL_ROOT, 'stowaway', 'dockerfiles')
+    base_path = os.path.join(env.TOOL_ROOT, 'dockerfiles')
     for name in os.listdir(base_path):
         full_path = os.path.join(base_path, name)
         if not name.startswith('.') and os.path.isdir(full_path):
@@ -346,12 +359,10 @@ def install_app_mgmt(compile_base=True):
 
     #TODO We don't need 2 whole cpu units, but at least one should be guaranteed
     redis_password = gencode(12)
-    redis = run_image('system/redis', hard_cpu=False,
-        PASSWORD=redis_password)
+    redis = run_image('system/redis', PASSWORD=redis_password)
     redis_uri = 'redis://:%s@%s/0' % (redis_password, redis.paths[0])
 
-    hipache = run_image('system/hipache', ports='80:80', hard_cpu=False,
-        REDIS_URI=redis_uri)
+    hipache = run_image('system/hipache', ports='80:80', REDIS_URI=redis_uri)
     hipache_uri = 'http://' + hipache.paths[0]
 
     return register_balancer(hipache_uri, redis_uri, default=True)
@@ -366,6 +377,7 @@ def dbshell():
         'balancers': balancerCollection,
         'apps': appCollection,
         'boxes': boxCollection,
+        'env': env,
     }
     code.interact(local=variables)
 

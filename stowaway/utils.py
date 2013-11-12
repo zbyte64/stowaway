@@ -39,10 +39,10 @@ class machine(object):
         self.environ_patch = patch_environ(VM_NAME=self.name)
 
     def __enter__(self):
-        self.make_settings_patch()
-        self.settings_patch.__enter__()
         self.make_environ_patch()
         self.environ_patch.__enter__()
+        self.make_settings_patch()
+        self.settings_patch.__enter__()
 
     def __exit__(self, *args):
         self.settings_patch.__exit__(*args)

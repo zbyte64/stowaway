@@ -39,7 +39,7 @@ Create a new cluster::
     #installs a local docker registry
     stowaway install_local_registry
     
-    #will ask configuration questions
+    #will ask configuration questions, be sure to configure your security group
     stowaway embark
 
     #allows for multi-node web app scaling

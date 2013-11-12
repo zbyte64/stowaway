@@ -19,6 +19,7 @@ class Node(micromodels.Model):
     created = micromodels.DateTimeField(default=datetime.datetime.now)
     memory_capacity = micromodels.IntegerField(required=False, help_text='In bytes')
     cpu_capacity = micromodels.IntegerField(required=False, help_text='CPU Shares')
+    cpu_buffer = micromodels.IntegerField(default=0, help_text='Extra CPU Shares')
 
     def get_instances(self):
         return appCollection.find(node=self.hostname)
@@ -35,7 +36,7 @@ class Node(micromodels.Model):
         if self.memory_capacity and self.memory_capacity < memory:
             return False
 
-        if self.cpu_capacity and self.cpu_capacity < cpu:
+        if self.cpu_capacity and self.cpu_capacity + self.cpu_buffer < cpu:
             return False
 
         return True
