@@ -19,6 +19,10 @@ env.WORK_DIR = os.getcwd()
 env.PROVISION_SETUPS = dict()
 env.VAGRANT = None
 env.SETTINGS_LOADED = False
+env.SUPERVICOR_CONF = '''[program:{instancename}]:
+command=docker run -n {instancename} {args} {imagename}'
+user=root
+'''
 
 #state sensitive
 from .state import nodeCollection, instanceCollection, configCollection, \
@@ -146,7 +150,7 @@ def upload_image(imagename):
         }
         local('sudo docker tag {imagename} {registry}/{imagename}'.format(**info))
         local('sudo docker push {registry}/{imagename}'.format(**info))
-        #sync_image(imagename)
+        sync_image(imagename)
     else:
         assert False, 'Please install a docker registry'
     return
@@ -160,11 +164,10 @@ def sync_image(imagename, *nodenames):
             with registry():
                 fullname = '%s/%s' % (env.TUNNELED_DOCKER_REGISTRY, imagename)
                 sudo('docker pull %s' % fullname)
-                yield fullname
+                sudo('docker tag %s %s' % (fullname, imagename))
 
 
-#wtf?
-def _prep_start_image(imagename, name=None, ports='', memory=256, cpu=1,
+def _get_run_image_info(imagename, name=None, ports='', memory=256, cpu=1,
         **envparams):
     ports = [port.strip() for port in ports.split('-') if port]
     memory = memory * MB  # convert MB to Bytes
@@ -183,8 +186,6 @@ def _prep_start_image(imagename, name=None, ports='', memory=256, cpu=1,
         name = node.name
     assert name, 'Please provision a new node to make room'
 
-    fullname = list(sync_image(imagename, name))[0]
-
     #compile args
     e_args = ' '.join(['-e %s=%s' % (key, value)
         for key, value in envparams.items()])
@@ -195,34 +196,37 @@ def _prep_start_image(imagename, name=None, ports='', memory=256, cpu=1,
     args = '%s %s -m=%s -c=%s' % (e_args, p_args, memory, cpu)
     args = args.strip()
 
-    return {'args': args, 'fullname': fullname, 'node': node, 'name':name}
+    return {'args': args, 'node': node, 'name': name}
 
 
 @configuredtask
-def run_image(imagename, name=None, ports='', memory=256, cpu=1, **envparams):
-    indo = _prep_start_image(imagename, name=name, ports=ports, memory=memory,
-        cpu=cpu, *envparams)
+def run_image(imagename, name=None, ports='', memory=512, cpu=1, **envparams):
+    indo = _get_run_image_info(imagename, name=name, ports=ports, memory=memory,
+        cpu=cpu, **envparams)
     args = indo['args']
-    fullname = indo['fullname']
     node = indo['node']
     name = indo['name']
 
     with machine(name):
-        result = sudo('docker run -d %s %s' % (args, fullname))
+        #TODO add supervisorconf
+        #from fabric.contrib.files import append
+        instancename = gencode(8)
+        #conf = env.SUPERVISOR_CONF.format(
+            #instancename=instancename, args=args, imagename=imagename)
+        #append('/etc/supervisord/conf.d/%s.conf' % instancename, conf, sudo=True)
+        #sudo('supervisorctl reread')
+        #sudo('supervisorctl start %s' % instancename)
 
-        container_id = result.strip().rsplit()[-1]
+        sudo('docker run -d --name %s %s %s' % (instancename, args, imagename))
 
         paths = list()
         hostname = node.privatename or env.VAGRANT.hostname(name)
 
         #grab ports
-        result = sudo('docker inspect %s' % container_id)
+        result = sudo('docker inspect %s' % instancename)
         response = json.loads(result.strip())
         instance = response[0]
         print instance
-        #if instance['Config']['ExposedPorts']:
-        #    ports = [port.split('/')[0]
-        #        for port in instance['Config']['ExposedPorts'].keys()]
         if instance['NetworkSettings']['Ports']:
             ports = list()
             for inner, outer in instance['NetworkSettings']['Ports'].items():
@@ -239,14 +243,14 @@ def run_image(imagename, name=None, ports='', memory=256, cpu=1, **envparams):
             image_name=imagename,
             memory=memory,
             cpu=cpu,
-            container_id=container_id,
+            container_id=instancename,
             paths=paths,
         ))
 
 
 @configuredtask
-def shell(imagename, name=None, ports='', memory=256, cpu=1, **envparams):
-    indo = _prep_start_image(imagename, name=name, ports=ports, memory=memory,
+def shell(imagename, name=None, ports='', memory=512, cpu=1, **envparams):
+    indo = _get_run_image_info(imagename, name=name, ports=ports, memory=memory,
         cpu=cpu, **envparams)
     args = indo['args']
     fullname = indo['fullname']
@@ -257,7 +261,7 @@ def shell(imagename, name=None, ports='', memory=256, cpu=1, **envparams):
 
 
 @configuredtask
-def appshell(appname, name=None, ports='', memory=256, cpu=1):
+def appshell(appname, name=None, ports='', memory=512, cpu=1):
     app = appCollection.get(name=appname)
     shell(app.image_name, name=name, ports=ports, memory=memory, cpu=cpu,
         **app.environ)
