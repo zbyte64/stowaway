@@ -280,15 +280,14 @@ def app_remove_config(name, *keys):
 
 
 @configuredtask
-def app_scale(name, num=1, process=None):
+def app_scale(name, num=1, process=None, port='80'):
     #num=-1 to descale
     num = int(num)
     app = appCollection.get(name=name)
     balancer = balancerCollection.get(name=app.balancer_name)
     if num > 0:
         for i in range(num):
-            #TODO assuming port 8000 is bad
-            instance = run_image(app.image_name, ports='8000',
+            instance = run_image(app.image_name, ports=port,
                 **(app.environ or {}))
             redis_cli(balancer.redis_uri, 'rpush',
                       'frontend:%s' % name, 'http://%s' % instance.paths[0])
