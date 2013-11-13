@@ -92,6 +92,6 @@ configCollection = RawCollection(name='config', data_store=datastore)
 balancerCollection = Collection(Balancer, data_store=datastore,
     object_id_field='name')
 appCollection = Collection(Application, data_store=datastore,
-    id_generator=id_maker)
+    object_id_field='name')
 boxCollection = Collection(BoxConfiguration, data_store=datastore,
     id_generator=id_maker)

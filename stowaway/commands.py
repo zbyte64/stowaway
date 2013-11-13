@@ -291,7 +291,7 @@ def app_scale(name, num=1, process=None):
             instance = run_image(app.image_name, ports='8000',
                 **(app.environ or {}))
             redis_cli(balancer.redis_uri, 'rpush',
-                      'frontend:%s' % name, 'http://'% instance.paths[0])
+                      'frontend:%s' % name, 'http://%s' % instance.paths[0])
     elif num < 0:
         instances = iter(instanceCollection.find(image_name=app.image_name))
         for i in range(abs(num)):
