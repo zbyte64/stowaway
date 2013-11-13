@@ -146,14 +146,25 @@ def upload_image(imagename):
         }
         local('sudo docker tag {imagename} {registry}/{imagename}'.format(**info))
         local('sudo docker push {registry}/{imagename}'.format(**info))
-        return
+        #sync_image(imagename)
     else:
         assert False, 'Please install a docker registry'
     return
 
 
-@configuredtask
-def run_image(imagename, name=None, ports='', memory=256, cpu=1,
+def sync_image(imagename, *nodenames):
+    if not nodenames:
+        nodenames = [node.name for node in nodeCollection]
+    for name in nodenames:
+        with machine(name):
+            with registry():
+                fullname = '%s/%s' % (env.TUNNELED_DOCKER_REGISTRY, imagename)
+                sudo('docker pull %s' % fullname)
+                yield fullname
+
+
+#wtf?
+def _prep_start_image(imagename, name=None, ports='', memory=256, cpu=1,
         **envparams):
     ports = [port.strip() for port in ports.split('-') if port]
     memory = memory * MB  # convert MB to Bytes
@@ -172,6 +183,9 @@ def run_image(imagename, name=None, ports='', memory=256, cpu=1,
         name = node.name
     assert name, 'Please provision a new node to make room'
 
+    fullname = list(sync_image(imagename, name))[0]
+
+    #compile args
     e_args = ' '.join(['-e %s=%s' % (key, value)
         for key, value in envparams.items()])
 
@@ -181,44 +195,72 @@ def run_image(imagename, name=None, ports='', memory=256, cpu=1,
     args = '%s %s -m=%s -c=%s' % (e_args, p_args, memory, cpu)
     args = args.strip()
 
+    return {'args': args, 'fullname': fullname, 'node': node, 'name':name}
+
+
+@configuredtask
+def run_image(imagename, name=None, ports='', memory=256, cpu=1, **envparams):
+    indo = _prep_start_image(imagename, name=name, ports=ports, memory=memory,
+        cpu=cpu, *envparams)
+    args = indo['args']
+    fullname = indo['fullname']
+    node = indo['node']
+    name = indo['name']
+
     with machine(name):
-        with registry():
-            fullname = '%s/%s' % (env.TUNNELED_DOCKER_REGISTRY, imagename)
-            sudo('docker pull %s' % fullname)
-            result = sudo('docker run -d %s %s' % (args, fullname))
+        result = sudo('docker run -d %s %s' % (args, fullname))
 
-            container_id = result.strip().rsplit()[-1]
+        container_id = result.strip().rsplit()[-1]
 
-            paths = list()
-            hostname = node.privatename or env.VAGRANT.hostname(name)
+        paths = list()
+        hostname = node.privatename or env.VAGRANT.hostname(name)
 
-            #grab ports
-            result = sudo('docker inspect %s' % container_id)
-            response = json.loads(result.strip())
-            instance = response[0]
-            print instance
-            #if instance['Config']['ExposedPorts']:
-            #    ports = [port.split('/')[0]
-            #        for port in instance['Config']['ExposedPorts'].keys()]
-            if instance['NetworkSettings']['Ports']:
-                ports = list()
-                for inner, outer in instance['NetworkSettings']['Ports'].items():
-                    if not outer:
-                        continue
-                    ports.append(outer[0]['HostPort'])
+        #grab ports
+        result = sudo('docker inspect %s' % container_id)
+        response = json.loads(result.strip())
+        instance = response[0]
+        print instance
+        #if instance['Config']['ExposedPorts']:
+        #    ports = [port.split('/')[0]
+        #        for port in instance['Config']['ExposedPorts'].keys()]
+        if instance['NetworkSettings']['Ports']:
+            ports = list()
+            for inner, outer in instance['NetworkSettings']['Ports'].items():
+                if not outer:
+                    continue
+                ports.append(outer[0]['HostPort'])
 
-            for port in ports:
-                uri = '%s:%s' % (hostname, port.split(':')[0])
-                paths.append(uri)
+        for port in ports:
+            uri = '%s:%s' % (hostname, port.split(':')[0])
+            paths.append(uri)
 
-            return _printobj(instanceCollection.create(
-                machine_name=name,
-                image_name=imagename,
-                memory=memory,
-                cpu=cpu,
-                container_id=container_id,
-                paths=paths,
-            ))
+        return _printobj(instanceCollection.create(
+            machine_name=name,
+            image_name=imagename,
+            memory=memory,
+            cpu=cpu,
+            container_id=container_id,
+            paths=paths,
+        ))
+
+
+@configuredtask
+def shell(imagename, name=None, ports='', memory=256, cpu=1, **envparams):
+    indo = _prep_start_image(imagename, name=name, ports=ports, memory=memory,
+        cpu=cpu, **envparams)
+    args = indo['args']
+    fullname = indo['fullname']
+    name = indo['name']
+
+    with machine(name):
+        sudo('docker run -t -i %s %s /bin/bash' % (args, fullname), pty=True)
+
+
+@configuredtask
+def appshell(appname, name=None, ports='', memory=256, cpu=1):
+    app = appCollection.get(name=appname)
+    shell(app.image_name, name=name, ports=ports, memory=memory, cpu=cpu,
+        **app.environ)
 
 
 @configuredtask
@@ -393,7 +435,7 @@ def install_app_mgmt(compile_base=True):
 
 
 @configuredtask
-def dbshell():
+def configshell():
     variables = {
         'nodes': nodeCollection,
         'instances': instanceCollection,

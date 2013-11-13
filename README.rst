@@ -60,6 +60,11 @@ Adding and managing apps in the cluster::
     stowaway app_add_domain:<name>,<domain>
 
 
+Shell into your app:
+
+    stowaway appshell:<name>
+
+
 More Commands
 =============
 
