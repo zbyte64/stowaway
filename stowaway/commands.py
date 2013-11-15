@@ -331,42 +331,68 @@ def app_scale(name, num=1, process=None, port='80'):
     num = int(num)
     app = appCollection.get(name=name)
     balancer = balancerCollection.get(name=app.balancer_name)
+    instances = list()
     if num > 0:
         for i in range(num):
             instance = run_image(app.image_name, ports=port,
                 **(app.environ or {}))
+            instances.append(instance)
             redis_cli(balancer.redis_uri, 'rpush',
                       'frontend:%s' % name, 'http://%s' % instance.paths[0])
+            for domain in app.domains:
+                redis_cli(balancer.redis_uri, 'rpush',
+                      'frontend:%s' % domain, 'http://%s' % instance.paths[0])
     elif num < 0:
         instances = iter(instanceCollection.find(image_name=app.image_name))
         for i in range(abs(num)):
             instance = instances.next()
+            instances.append(instance)
+            redis_cli(balancer.redis_uri, 'lrem', 'frontend:%s' % name, '1',
+                'http://%s' % instance.paths[0])
+            for domain in app.domains:
+                redis_cli(balancer.redis_uri, 'lrem', 'frontend:%s' % domain,
+                    '1', 'http://%s' % instance.paths[0])
             stop_instance(instance.container_id)
+    return instances
 
 
 @configuredtask
 def app_add_domain(name, domain):
     app = appCollection.get(name=name)
     balancer = balancerCollection.get(name=app.balancer_name)
-    redis_cli(balancer.redis_uri, 'rpush', 'frontend:%s' % domain, name)
+
+    endpoints = [name]
+    instances = instanceCollection.objects.find(instance_name=app.image_name)
+    for instance in instances:
+        with machine(instance.machine_name):
+            endpoints.append(instance.paths[0])
+    redis_cli(balancer.redis_uri, 'rpush', 'frontend:%s' % domain, *endpoints)
+    app.domains.append(domain)
+    app.save()
 
 
 @configuredtask
 def app_remove_domain(name, domain):
     app = appCollection.get(name=name)
     balancer = balancerCollection.get(name=app.balancer_name)
-    #TODO lookup redis docs
-    redis_cli(balancer.redis_uri, 'rpop', 'frontend:%s' % domain)#, name)
+    redis_cli(balancer.redis_uri, 'del', 'frontend:%s' % domain)
+    app.domains.remove(domain)
+    app.save()
 
 
 def redis_cli(uri, *args):
-    #TODO which machine?
-    instance = instanceCollection.first()
-    name = instance.machine_name
-    with machine(name):
+    def foo():
         with cd('/vagrant'):
             arg = ' '.join(["%s" % arg for arg in args])
             return run('python redis_cli.py %s %s' % (uri, arg))
+
+    if not os.environ.get('VM_NAME'):
+        instance = instanceCollection.first()
+        name = instance.machine_name
+        with machine(name):
+            return foo()
+    else:
+        return foo()
 
 
 def list_collection(col):

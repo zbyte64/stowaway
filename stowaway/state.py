@@ -52,10 +52,6 @@ class DockerInstance(micromodels.Model):
     paths = micromodels.FieldCollectionField(micromodels.CharField())
 
 
-class AppInstance(DockerInstance):
-    appname = micromodels.CharField()
-
-
 class Balancer(micromodels.Model):
     name = micromodels.CharField()
     endpoint_uri = micromodels.CharField()
@@ -68,6 +64,7 @@ class Application(micromodels.Model):
     image_name = micromodels.CharField()
     balancer_name = micromodels.CharField()
     environ = micromodels.JSONField(default=dict)
+    domains = micromodels.FieldCollectionField(micromodels.CharField())
 
 
 class BoxConfiguration(micromodels.Model):
