@@ -45,9 +45,9 @@ def init_vagrant():
 def embark():
     init_vagrant()
     options = env.PROVISION_SETUPS.keys()
+    #TODO allow import of an existing cluster
     provisioner = prompt('What vessel shall to use? (%s)' % ', '.join(options),
         default='aws')
-    provisioner = 'aws'
     return env.PROVISION_SETUPS[provisioner]()
 
 

@@ -11,6 +11,16 @@ from stowaway.commands import load_settings
 
 
 env.AWS_BOX = 'https://github.com/mitchellh/vagrant-aws/raw/master/dummy.box'
+env.AWS_REGIONS = [
+    'us-east-1',
+    'us-west-1',
+    'us-west-2',
+    'eu-west-1',
+    'ap-southeast-1',
+    'ap-southeast-2',
+    'ap-northeast-1',
+    'sa-east-1',
+]
 
 
 def populate_boxes(environ):
@@ -38,6 +48,9 @@ def get_available_amis(environ, filters):
     for entry in entries:
         row = dict(zip(columns, entry))
         row['AMI-ID'] = row['AMI-ID'].split('>', 1)[1].split('<', 1)[0]
+        #CONSIDER: default of a collection should be a memory store
+        #TODO amis = rawCollection(object_id_field='AMI-ID', ds=memory); amis.add(row)
+        #TODO return amis.find(**filters)
         match = True
         for key, val in filters.items():
             rval = row[key]
@@ -61,9 +74,11 @@ def setupaws():
     environ['AWS_SECRET_ACCESS_KEY'] = prompt('Enter your AWS Secret Access Key')
 
     #ports 23 and 80 are required
-    environ['AWS_SECURITY_GROUPS'] = prompt('Enter AWS security group', default='dockcluster')
-    #TODO list regions
-    environ['AWS_REGION'] = prompt('Enter AWS region', default='us-east-1')
+    environ['AWS_SECURITY_GROUPS'] = prompt('Enter AWS security group',
+        default='dockcluster')
+    region_options = ','.join(env.AWS_REGIONS)
+    environ['AWS_REGION'] = prompt('Enter AWS region (%s)' % region_options,
+        default='us-east-1')
 
     #prompt ami based on region
     filters = {
@@ -73,12 +88,14 @@ def setupaws():
         'version': '12.04 LTS',
     }
     amis = get_available_amis(environ, filters)
-    environ['AWS_AMI'] = prompt('Enter AWS AMI (%s)' % ','.join([ami['AMI-ID'] for ami in amis]),
+    ami_options = ','.join([ami['AMI-ID'] for ami in amis])
+    environ['AWS_AMI'] = prompt('Enter AWS AMI (%s)' % ami_options,
         default=amis[0]['AMI-ID'])
-    #environ['AWS_MACHINE'] = prompt('Enter AWS Machine Size', default='m1.small')
     environ['AWS_KEYPAIR_NAME'] = prompt('Enter your AWS Key pair name')
-    default_pem_path = os.path.join(os.path.expanduser('~/.ssh'), environ['AWS_KEYPAIR_NAME'] + '.pem')
-    environ['AWS_SSH_PRIVKEY'] = prompt('Enter your AWS SSH private key path', default=default_pem_path)
+    default_pem_path = os.path.join(os.path.expanduser('~/.ssh'),
+        environ['AWS_KEYPAIR_NAME'] + '.pem')
+    environ['AWS_SSH_PRIVKEY'] = prompt('Enter your AWS SSH private key path',
+        default=default_pem_path)
     configCollection['environ'] = environ
 
     load_settings()
