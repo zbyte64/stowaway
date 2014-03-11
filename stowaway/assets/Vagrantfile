@@ -27,9 +27,9 @@ Vagrant::Config.run do |global_config|
     #Python injects
     pkg_cmd << "easy_install pip; pip install redis; "
     # Add guest additions if local vbox VM. As virtualbox is the default provider,
-    
+
     pkg_cmd << "cp #{File.join('/vagrant/', 'redis_cli.py')} /usr/local/bin/redis_cli.py"
-    
+
     # it is assumed it won't be explicitly stated.
     if ENV["VAGRANT_DEFAULT_PROVIDER"].nil? && ARGV.none? { |arg| arg.downcase.start_with?("--provider") }
       pkg_cmd << "apt-get install -q -y linux-headers-generic-lts-raring dkms; " \
@@ -55,7 +55,7 @@ end
 # Providers were added on Vagrant >= 1.1.0
 Vagrant.configure("2") do |global_config|
   global_config.vm.define VM_NAME do |config|
-  
+
   config.vm.provider :aws do |aws, override|
     aws.access_key_id = ENV["AWS_ACCESS_KEY_ID"]
     aws.secret_access_key = ENV["AWS_SECRET_ACCESS_KEY"]
@@ -90,10 +90,10 @@ Vagrant.configure("2") do |global_config|
     config.vm.box = BOX_NAME
     config.vm.box_url = BOX_URI
   end
-  
-  config.vm.network :forwarded_port, :host => 806379, :guest => 6379
-  config.vm.network :forwarded_port, :host => 8080, :guest => 80
-  
+
+  #config.vm.network :forwarded_port, :host => 806379, :guest => 6379
+  #config.vm.network :forwarded_port, :host => 8080, :guest => 80
+
   end #end vm define
 end
 

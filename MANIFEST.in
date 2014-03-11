@@ -1,2 +1,1 @@
-recursive-include stowaway/dockerfiles *
 recursive-include stowaway/assets *

@@ -5,6 +5,7 @@ import json
 import code
 from pprint import pprint
 from functools import wraps
+from StringIO import StringIO
 
 from vagrant import Vagrant
 
@@ -77,6 +78,16 @@ def _printobj(obj):
     return obj
 
 
+def _fix_run_response(response):
+    #facepalm
+    #https://twitter.com/zbyte64/status/443213642285084673
+    ret = list()
+    for line in unicode(response).split('\n'):
+        line = line.split('] out:', 1)[-1]
+        ret.append(line)
+    return '\n'.join(ret)
+
+
 @configuredtask
 def provision(name=None, boxname=None):
     if name is None:
@@ -99,7 +110,7 @@ def provision(name=None, boxname=None):
         env.VAGRANT.up(vm_name=name, provider=env.PROVISIONER)
 
     with machine(name):
-        privatename = run('echo $HOSTNAME', capture=True).strip()
+        privatename = _fix_run_response(run('echo $HOSTNAME')).strip()
 
     cpu = env.get('CPU_CAPACITY', box.cpu)
     cpu = int(cpu) if cpu else None
@@ -284,6 +295,7 @@ def shut_it_down(*names):
         instances = instanceCollection.find(machine_name=name)
         for instance in instances:
             stop_instance(instance.container_id)
+        remove_node(name)
     balancerCollection.all().delete()
 
 
@@ -434,31 +446,14 @@ def vagrant(cmd='', name=None):
         local('vagrant %s' % cmd)
 
 
-@task
-def build_base():
-    base_path = os.path.join(env.TOOL_ROOT, 'dockerfiles')
-    for name in os.listdir(base_path):
-        full_path = os.path.join(base_path, name)
-        if not name.startswith('.') and os.path.isdir(full_path):
-            tag = 'system/%s' % name
-            local('cd %s && sudo docker build -t="%s" .' % (full_path, tag))
-
-
 @configuredtask
-def install_app_mgmt(compile_base=True):
-    compile_base = boolean(compile_base)
-    if compile_base:
-        build_base()
-
-    upload_image('system/redis')
-    upload_image('system/hipache')
-
+def install_app_mgmt():
     #TODO We don't need 2 whole cpu units, but at least one should be guaranteed
     redis_password = gencode(12)
-    redis = run_image('system/redis', ports='6379', PASSWORD=redis_password)
+    redis = run_image('zbyte64/stowaway-redis', ports='6379', PASSWORD=redis_password)
     redis_uri = 'redis://:%s@%s/0' % (redis_password, redis.paths[0])
 
-    hipache = run_image('system/hipache', ports='80:80', REDIS_URI=redis_uri)
+    hipache = run_image('zbyte64/stowaway-hipache', ports='80:80', REDIS_URI=redis_uri)
     hipache_uri = 'http://' + hipache.paths[0]
 
     return register_balancer(hipache_uri, redis_uri, default=True)
